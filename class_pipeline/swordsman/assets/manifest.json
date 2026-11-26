@@ -1,0 +1,72 @@
+{
+ "schema": "class-assets-v1",
+ "class": "swordsman",
+ "motions": {
+  "walk": {
+   "sheet": "walk.png",
+   "cols": 8,
+   "frames": 8,
+   "cell": [
+    256,
+    256
+   ],
+   "fps": 11,
+   "loop": true
+  },
+  "idle": {
+   "sheet": "idle.png",
+   "cols": 8,
+   "frames": 8,
+   "cell": [
+    256,
+    256
+   ],
+   "fps": 6,
+   "loop": true
+  },
+  "attack1": {
+   "sheet": "attack1.png",
+   "cols": 8,
+   "frames": 8,
+   "cell": [
+    256,
+    256
+   ],
+   "fps": 8,
+   "loop": false
+  },
+  "attack2": {
+   "sheet": "attack2.png",
+   "cols": 8,
+   "frames": 8,
+   "cell": [
+    256,
+    256
+   ],
+   "fps": 8,
+   "loop": false
+  },
+  "death": {
+   "sheet": "death.png",
+   "cols": 8,
+   "frames": 8,
+   "cell": [
+    256,
+    256
+   ],
+   "fps": 8,
+   "loop": false
+  },
+  "run": {
+   "sheet": "run.png",
+   "cols": 8,
+   "frames": 8,
+   "cell": [
+    256,
+    256
+   ],
+   "fps": 11,
+   "loop": true
+  }
+ }
+}

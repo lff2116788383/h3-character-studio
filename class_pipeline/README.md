@@ -1,0 +1,171 @@
+# class_pipeline — 职业整图制 GPT 工作流（独立产线）
+
+> 2D 职业驱动角色产线：每个职业 = 一套完整动作的整图 sprite（DNF/梦幻西游 式），
+> 不是分层纸娃娃（gpt_sheet_pipeline 产线）。**本目录自包含零依赖**：脚本、密钥、
+> 资产、文档全部在本目录内闭环，不 import、不引用 gpt_sheet_pipeline 任何内容。
+> 最后更新: 2026-11-27 · 维护者: lff2116788383 + Doubao 协作会话
+
+## 1. 为什么独立成线（方案决策记录）
+
+| 方案 | 结论 | 依据 |
+|---|---|---|
+| **职业整图制（本产线）** | ✅ 选定 | 分层省空间的前提是"部件被多角色复用"，职业制的衣/发/武器每职业不同、复用率≈0，分层反而大 3-5 倍；遮挡（刀盖手/盔压发）绘制时逐帧解决，问题不存在；甩辫/袍摆等形变逐帧画进图里（分层 IoU 0.44 画不出）；客户端零图层逻辑 |
+| 分层纸娃娃（gpt_sheet_pipeline） | 保留但不扩展 | 12 张内置卡+工具仍有价值；工具兼作烘焙产线（分层摆好→离线合成→整图导出） |
+| 像素骨骼 | 不采用 | 省空间但丢形变（attack 甩辫 IoU 0.44）、z 序变运行时难题 |
+| 程序像素化（高清→降采样量化） | 否决（用户拍板保持高清 cel 风） | demo 可生成但风格断裂，见 output/pixelate_demo.py 死路证据 |
+| GPT 直出真像素 | 不采用 | 伪像素风险 + 与现有厚涂资产断裂 |
+
+外观模型沿用 DNF 实证路线：**角色外观 = 职业整图；普通装备隐形只出数值；
+武器/时装走"整套重绘 + 调色板变体"**（一稿多色成本≈0），不做通用件拼装。
+
+## 2. 目录结构
+
+```
+class_pipeline/
+├── README.md                  # 本文档
+├── .gitignore                 # 排除 .secret-ui.env / __pycache__
+├── .secret-ui.env             # 生图密钥(自包含, 绝不入库)
+├── scripts/
+│   ├── gpt_client.py          # 生图客户端(自包含; 密钥: 环境变量 > 向上找 .secret-ui.env)
+│   ├── common.py              # 公共工具副本: 切片/品红抠底+despill/脚底对齐 (SIZE=256, PIVOT=128,240)
+│   ├── gen_all_in_one.py      # Step2 一锅出全动作 sheet(8×8=64格, 每行一动作)
+│   ├── gen_row.py             # Step2b 缺格补行(单行 8 格横条)
+│   ├── gen_sheets.py          # 备用: 旧链式逐动作生成(27帧×4张, 上/下方向备选)
+│   ├── qc_sheet.py            # Step3 QC: 空格检测/行内 IoU/脚底差/行条拼图
+│   └── build_class_assets.py  # Step4 切格→抠底→脚底对齐→每动作透明 sheet+manifest
+└── swordsman/                 # 每职业一个目录（新职业复制此结构）
+    ├── portraits/             # Step0 定稿立绘(两形态: 斗笠/摘笠, 身份锚点)
+    │   ├── lihui_hat.png
+    │   └── lihui_ponytail.png
+    ├── masters/               # Step1 母版(品红底单帧 sprite)
+    │   ├── walk_master.png    # 行走 contact 帧
+    │   └── attack_master.png  # 劈砍中段帧
+    ├── sheets/                # Step2 生成产物(花真金白银, 全部入库)
+    │   ├── all_in_one_v1.png          # 64 格全动作一锅出
+    │   ├── attack2_row_fix.png        # 缺格补行条
+    │   ├── all_in_one_rows.png        # QC 行条拼图
+    │   └── qc/                        # QC 报告/放大图
+    └── assets/                # Step4 最终资产(build_class_assets 生成)
+        ├── walk.png / idle.png / ...   # 每动作 8 格透明底 sheet
+        └── manifest.json               # schema=class-assets-v1
+```
+
+## 3. 环境事实
+
+- Windows + **PowerShell 7**（Bash 不可用）；Python 3.12+（numpy/Pillow/opencv/pyyaml 已装）。
+- 生图 API: 密钥 `class_pipeline/.secret-ui.env`（或环境变量 `GPT_IMAGE_API_KEY`），
+  endpoint/model 见 `scripts/gpt_client.py`。价格 ≈ **0.09 元/张，50s/张，无 seed（不可复现）**；
+  抽卡预算: 每资产 ×2 取优。
+- API 尺寸档: 实测上限 **1536×1536**（传 2048 会被回落）；单行补条用 1536×1024。
+- 生成产物是花真金白银的资产，**全部入库**；提交前 `git status --porcelain` 确认
+  `.secret-ui.env` 不在暂存区（.gitignore 双保险）。
+
+## 4. 产线流程（六步）
+
+```
+Step0 定稿立绘 portraits/（斗笠+摘笠两形态, 身份锚点, 后续所有生成的参考图）
+Step1 母版 masters/（品红 #ff00ff 底单帧 sprite: walk contact 帧 + attack 中段帧）
+Step2 一锅出 scripts/gen_all_in_one.py → sheets/all_in_one_v<n>.png（64格 8×8, 每行一动作）
+Step3 QC scripts/qc_sheet.py → 空格/IoU/脚底差报告; 缺格行 scripts/gen_row.py 补行
+Step4 资产 scripts/build_class_assets.py → assets/<motion>.png(透明底) + manifest.json
+Step5 验证: manifest 喂预览页/纸娃娃工具逐动作播放目检（帧序列/脚底/循环闭合）
+Step6 四方向: left=right 镜像(免费); up/down 各跑一轮 Step2-5(每方向独立一锅)
+```
+
+新职业 = 复制 `swordsman/` 目录结构 → 出立绘/母版 → 依次跑 Step2-5。
+
+### Step2 一锅出要点（剑客 pilot 实证）
+
+- **一次生成 64 格、每行一个动作**，同次生成内角色一致性最好（所有帧同源，
+  无链式"传话游戏"退化）；实测 7/8 行完整成序列（见 §7）。
+- prompt = `PROMPT_HEAD`（总述+角色契约）+ `ROW_LAYOUT`（逐行动作描述），
+  两处都在 `gen_all_in_one.py` 里，新职业改这两处即可。
+- 抽卡: 效果不行删产物改 `--version` 重跑（幂等: 已存在跳过）。
+
+### Step3 QC 与补行要点
+
+- `qc_sheet.py` 按格**边框环带重估背景色**再抠 mask——品红底有暗角/纹理，
+  固定阈值会把暗角判成前景（第一版 QC foot_y 全=191、IoU 虚高 0.99 即此污染）。
+- 看三个指标: `empty`（跳格）、`adjacent_IoU`（行内连续性，动作行 0.8+ 合格，
+  循环行应先降后升）、`footSpread`（脚底差>8px 属对齐风险，Step4 会兜底）。
+- 缺格/跑偏行 → `gen_row.py` 单行补条（8 格横条比 64 格大表更稳，实测一次补成）；
+  补行条命名 `<motion>_row_fix_v<n>.png`，Step4 自动整行替换优先采用。
+
+### Step4 资产要点
+
+- 抠底同样走背景重估 + 最大连通域（`build_class_assets.py` 内置，不依赖旧产线）。
+- **脚底/水平对齐**: 全帧按 alpha bbox 裁剪 → 最大宽高归一化画布 → 脚底贴同一
+  水平线 + 水平中心对齐（帧间重心稳定，播放不抖）。
+- **保持原生分辨率不放大**（1536 sheet → cell 192×192，角色有效高约 130px），
+  清晰优先；放大策略（NEAREST×1.5 / 生成时要求角色占满格子）待目检后再定。
+
+## 5. 动作与帧数规划（横版 HD-2D, 每行固定 8 格便于切格）
+
+| 行 | 动作 | 帧数 | 播放 | 说明 |
+|---|---|---|---|---|
+| 1 | walk 行走 | 8 | 循环 | 首尾闭合约束写进 prompt |
+| 2 | idle 待机 | 8 | 循环 | 呼吸起伏；旧产线只是借 walk f0，值得单独做 |
+| 3 | attack1 挥砍 | 8 | 一次性 | 拔剑过顶→劈下→收势 |
+| 4 | attack2 突刺 | 8 | 一次性 | 普攻二段/连招 |
+| 5 | death 死亡 | 8 | 一次性 | 末帧躺地停留 |
+| 6 | run 跑步 | 8 | 循环 | 无跑步机制的职业可改为待机变体/删行 |
+| 7 | hit 受击 | 3+5空 | 一次性 | 快速反馈 |
+| 8 | spare 空 | - | - | 预留（技能/骑乘/表情） |
+
+合计 51 帧/方向（不含 spare）；生成侧固定 8 格/行，帧数由 manifest 的 `frames` 字段
+声明（客户端/工具按元数据播，不锁 8）。hit 只取前 3 格。
+
+## 6. 关键约定
+
+| 约定 | 内容 |
+|---|---|
+| sheet 布局 | 恒定 8列×8行(一锅) 或 8列×1行(补行), 品红 #ff00ff 底, 无边框无文字无阴影; cell 内 y 向下 |
+| 角色契约 | 所有生成 prompt 必须复述：服装/配色/背剑/葫芦/斗笠/马尾 + "严禁腰间横挂剑鞘"（曾反复跑偏） |
+| 母版规格 | 品红底单帧全身, right 向 3/4 视角, walk=contact 姿势, attack=动作中段 |
+| 行分配 | 行号即动作（ROW_LAYOUT）, 上=walk 下=spare 固定顺序, 新职业不改顺序只改描述 |
+| 循环动作 | walk/idle/run 首尾闭合约束必须写进 prompt 第 1 格 ↔ 第 8 格 |
+| 一次性动作 | attack/death/hit 不闭合, manifest `loop:false` |
+| manifest | schema=class-assets-v1: motion→{sheet, cols, frames, cell, fps, loop}, 消费方按元数据播 |
+| git | 只 add `class_pipeline/` 与 `gpt_sheet_pipeline/`; **.secret-ui.env 永不入库**; 单文件 <100MB |
+
+## 7. 成本账（剑客 pilot 实测）
+
+| 路线 | 生成次数 | 成本 | 一致性 |
+|---|---|---|---|
+| **一锅出+补行（本产线）** | 1 张 64格 + ≤2 张补行 | **≈0.3 元/方向** | 同源最好；7/8 行完整 |
+| 旧链式（27帧×4张/动作） | walk+attack ≈8 张 | ≈0.8 元/2动作 | 链式退化（旧产线 IoU 0.71 教训） |
+| 7 动作×4方向全套 | ≈6 张/方向 | ≈1.5 元/方向, 4向 ≈6 元 | — |
+| 抽卡预算 ×2 | — | 全套 ≈12 元/职业 | 无 seed, 靠抽 |
+
+## 8. 死路清单（不要再试）
+
+1. **程序像素化**（高清→降采样+量化）: 可生成但用户拍板保持高清 cel 风——
+   风格断裂；证据 `gpt_sheet_pipeline/output/pixelate_demo*.py/png`（留档）。
+2. **QC 固定品红阈值**: 品红底暗角/纹理会把背景判成前景（foot_y 全=191、
+   IoU 虚高 0.99 的教训）——必须按格边框环带重估背景色。
+3. **跨动作复用锚点/对齐参数**（继承自旧产线 §7.7）: 每动作/方向独立对齐。
+4. **腰间挂剑/剑鞘**: 用户明确否决, prompt 必须带"剑只背在背后、严禁腰间横挂剑鞘"，
+   否则稳定跑偏出腰剑。
+5. **API 传 2048 尺寸**: 上限 1536, 会被回落——一锅出 cell 192px 是当前现实,
+   想要更大格子只能减列数（如 4×8=32 格 cell 384px, 代价是动作分多张）。
+
+## 9. 剑客 pilot 实验记录（2026-11-27, 全部入库）
+
+- 定稿立绘: `swordsman/portraits/`（斗笠+摘笠两形态, 参考"逸剑风云决宇文逸"气质原创）。
+- 母版: `masters/`（walk contact 帧 + attack 劈砍中段; walk 第一抽剑在手, 重抽修正背剑）。
+- 一锅出: `sheets/all_in_one_v1.png` — walk/idle/attack1/death/run/hit 六行动作
+  完整（death 8 帧后仰→踉跄→倒地→躺平全程连贯）; attack2 行 c3 跳格+c5 跑偏。
+- 补行: `sheets/attack2_row_fix.png` — 单行 8 格突刺一次补成（含逐格姿势 prompt）。
+- QC: `sheets/qc/` 行条图+放大图; 行条目检确认为准（QC 数字 v1 被暗角污染不可信,
+  qc_sheet.py v2 已修）。
+- commit: 8225eca（pilot 实验）→ 本目录重构（独立产线化）。
+
+## 10. TODO（接手从这里开始）
+
+1. `build_class_assets.py` 跑通剑客 → `assets/` 7 动作透明 sheet + manifest。
+2. Step5 播放验证: manifest 喂预览页/纸娃娃工具逐动作目检（walk 循环闭合、
+   attack 弧线、death 落地、脚底稳定性）。
+3. 放大策略拍板: 原生 192 cell vs prompt 要求角色占满格子重生成 vs NEAREST 放大。
+4. 四方向: up/down 各一轮一锅出（left 镜像免费）; 每方向独立 QC+补行。
+5. 第二职业复制本流程验证产线可复制性。
+6. manifest → 客户端契约对齐（hd2d-mmo crescent-traveler 式）另行立项。
