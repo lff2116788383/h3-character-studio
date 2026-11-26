@@ -45,7 +45,19 @@
     <input id="scrub" type="range" min="0" max="7" value="0">
   </div>
   <div class="grp">
-    <button id="play">暂停/播放</button><button id="anchors">锚点调试</button>
+    <button id="play">暂停/播放</button><button id="anchors">锚点调试</button><button id="edit">锚点校准</button>
+  </div>
+  <div class="grp" id="editbox" style="display:none">
+    <div class="lab">人工校准（?edit=1）</div>
+    <div id="anchor-chips" style="display:flex;flex-wrap:wrap"></div>
+    <div style="margin-top:6px">
+      <button id="exp-json">导出JSON</button><button id="copy-json">复制JSON</button>
+    </div>
+    <div style="margin-top:4px">
+      <button id="reset-frame">重置本帧</button><button id="reset-all">清空全部修改</button>
+    </div>
+    <div class="note" id="edit-status" style="margin-top:6px"></div>
+    <div class="note">拖动十字粗调 · 方向键1px微调(Shift=5px) · [ ]切帧 · 修改自动暂存在浏览器本地</div>
   </div>
   <div id="hud">loading…</div>
 </div>
@@ -62,10 +74,73 @@ const state = {
   frame: qs.get('frame') ? +qs.get('frame') : 0,
   speed: 1.0, showAnchors: qs.get('anchors') === '1',
   attackHold: -1,                              // 攻击结束回 walk 的过渡
+  edit: qs.get('edit') === '1',                // 锚点人工校准模式
 };
 
 const data = await (await fetch('./prototype_data.json')).json();
 const CELL = data.cell, CW = CELL[0], CH = CELL[1];
+
+// ---------- 锚点人工校准层（?edit=1） ----------
+// 与 prototype_data.json 的 anchors 同 schema；人工改动暂存 localStorage，导出时只含与脚本标定不同的锚点。
+const EDIT_KEYS = ['head_top', 'wrist_r', 'elbow_r', 'ankle_a', 'ankle_b'];
+const CHIP_LABELS = { head_top: '头饰挂点', wrist_r: '手腕(武器)', elbow_r: '手肘(朝向)', ankle_a: '脚A', ankle_b: '脚B' };
+const LS_KEY = 'anchors_manual_v1';
+let edits = {};
+try { edits = JSON.parse(localStorage.getItem(LS_KEY) || '{}') || {}; } catch (e) { edits = {}; }
+let selKey = null;      // 当前选中锚点名
+let dragging = false;
+
+function anchorOf(motion, f) {
+  const base = data.motions[motion].anchors[f] || {};
+  const e = edits[motion] && edits[motion][f];
+  return e ? Object.assign({}, base, e) : base;
+}
+function setAnchor(motion, f, key, v) {
+  if (!edits[motion]) edits[motion] = {};
+  if (!edits[motion][f]) edits[motion][f] = {};
+  edits[motion][f][key] = [Math.max(0, Math.min(CW, Math.round(v[0]))), Math.max(0, Math.min(CH, Math.round(v[1])))];
+  localStorage.setItem(LS_KEY, JSON.stringify(edits));
+}
+function countDiffs() {
+  let n = 0;
+  for (const m in edits) {
+    const A = data.motions[m] && data.motions[m].anchors;
+    if (!A) continue;
+    for (const f in edits[m]) {
+      const i = +f; if (!A[i]) continue;
+      for (const k in edits[m][f]) {
+        const o = A[i][k], v = edits[m][f][k];
+        if (!o || o[0] !== v[0] || o[1] !== v[1]) n++;
+      }
+    }
+  }
+  return n;
+}
+function exportPayload() {
+  const motions = {};
+  for (const m in edits) {
+    const A = data.motions[m] && data.motions[m].anchors;
+    if (!A) continue;
+    const fr = {};
+    for (const f in edits[m]) {
+      const i = +f; if (!A[i]) continue;
+      const kv = {};
+      for (const k in edits[m][f]) {
+        const o = A[i][k], v = edits[m][f][k];
+        if (o && o[0] === v[0] && o[1] === v[1]) continue;   // 改回原值的锚点不导出
+        kv[k] = v;
+      }
+      if (Object.keys(kv).length) fr[f] = kv;
+    }
+    if (Object.keys(fr).length) motions[m] = fr;
+  }
+  return {
+    schema: 'anchors-manual-v1',
+    cell: CELL,
+    note: '由原型 ?edit=1 人工校准导出；仅含与脚本标定不同的锚点，构建侧应优先采用本文件',
+    motions,
+  };
+}
 
 // ---------- three 场景 ----------
 const cv = document.getElementById('cv');
@@ -143,21 +218,35 @@ async function loadAll() {
 // 锚点调试层
 const anchorGroup = new THREE.Group();
 scene.add(anchorGroup);
-const COLORS = {wrist_r: 0xff4040, elbow_r: 0x4060ff, head_top: 0x40ff60};
+const COLORS = {wrist_r: 0xff4040, elbow_r: 0x4060ff, head_top: 0x40ff60, ankle_a: 0xffc040, ankle_b: 0xffe080};
 function drawAnchors(motion, frame) {
   anchorGroup.clear();
   if (!state.showAnchors) return;
-  const a = data.motions[motion].anchors[frame];
+  const a = anchorOf(motion, frame);
   for (const [k, c] of Object.entries(COLORS)) {
     if (!a[k]) continue;
+    const isSel = state.edit && k === selKey;
     const [x, y] = px2world(a[k][0], a[k][1]);
+    const r = isSel ? 13 : 8;
     const g = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(x - 8, y), new THREE.Vector3(x + 8, y),
-      new THREE.Vector3(x, y - 8), new THREE.Vector3(x, y + 8)]);
+      new THREE.Vector3(x - r, y), new THREE.Vector3(x + r, y),
+      new THREE.Vector3(x, y - r), new THREE.Vector3(x, y + r)]);
     // transparent+高 renderOrder: 让十字进透明队列且排在所有精灵层(1-5)之后, 否则必然被盖住
-    const line = new THREE.LineSegments(g, new THREE.LineBasicMaterial({color: c, depthTest: false, transparent: true}));
+    const line = new THREE.LineSegments(g, new THREE.LineBasicMaterial({
+      color: isSel ? 0xffffff : c, depthTest: false, transparent: true}));
     line.renderOrder = 10;
     anchorGroup.add(line);
+    if (isSel) {   // 选中圈
+      const pts = [];
+      for (let i = 0; i <= 24; i++) {
+        const t = (i / 24) * Math.PI * 2;
+        pts.push(new THREE.Vector3(x + Math.cos(t) * 17, y + Math.sin(t) * 17, 0));
+      }
+      const ring = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
+        new THREE.LineBasicMaterial({color: 0xffffff, depthTest: false, transparent: true}));
+      ring.renderOrder = 11;
+      anchorGroup.add(ring);
+    }
   }
 }
 
@@ -172,7 +261,7 @@ function frameOf(motion, t) {
   return f >= M.frames ? -1 : f;   // 攻击一次性, -1 = 播完
 }
 
-let clock = 0, last = performance.now();
+let clock = 0, last = performance.now(), editSig = '';
 function tick(now) {
   const dt = (now - last) / 1000; last = now;
   if (!state.paused) clock += dt;
@@ -199,7 +288,7 @@ function tick(now) {
   const wpn = state.weapon && data.weapon;
   for (const k of ['weaponBack', 'weaponFront']) L[k].visible = false;
   if (wpn) {
-    const a = M.anchors[f], [wx, wy] = px2world(a.wrist_r[0], a.wrist_r[1]),
+    const a = anchorOf(motion, f), [wx, wy] = px2world(a.wrist_r[0], a.wrist_r[1]),
           [ex, ey] = px2world(a.elbow_r[0], a.elbow_r[1]);
     const ang = Math.atan2(wy - ey, wx - ex) - Math.PI / 2;  // 刀刃初始朝上
     const mesh = wo === 1 ? L.weaponBack : L.weaponFront;
@@ -211,11 +300,13 @@ function tick(now) {
   // 头饰: head_top 挂载; mir2x 规则: 头饰覆盖发型(此处发型烘焙, 视觉近似)
   L.head.visible = state.hat;
   if (state.hat) {
-    const a = M.anchors[f], [hx, hy] = px2world(a.head_top[0], a.head_top[1]);
+    const a = anchorOf(motion, f), [hx, hy] = px2world(a.head_top[0], a.head_top[1]);
     L.head.position.set(hx, hy, 0);
   }
   drawAnchors(motion, f);
   hud(motion, f, wo);
+  const esig = `${state.edit}|${motion}|${f}|${selKey}`;   // 帧/动作/选中变化时刷新校准面板
+  if (esig !== editSig) { editSig = esig; syncEditUI(); }
   renderer.render(scene, cam);
   requestAnimationFrame(tick);
 }
@@ -232,10 +323,16 @@ function syncUI(f) {
   sel('h-0', !state.hat); sel('h-1', state.hat);
 }
 function hud(motion, f, wo) {
-  $('hud').innerHTML =
+  let s =
     `动作 <b>${motion}</b> 帧 <b>${f}</b>/${data.motions[motion].frames} · weaponOrder <b>${wo}</b>(${wo === 1 ? '身后' : '身前'})\n` +
     `槽位: cloth=${state.cloth} weapon=${state.weapon ? '直刀' : '无'} headwear=${state.hat ? '斗笠' : '无'}\n` +
     `锚点: wrist=${motion === 'attack' ? 'attack表' : 'walk表'} · 速度 ${state.speed.toFixed(1)}x${state.paused ? ' · 已暂停' : ''}`;
+  if (state.edit) {
+    const a = anchorOf(motion, f);
+    const cur = selKey && a[selKey] ? `(${a[selKey][0]},${a[selKey][1]})` : '无';
+    s += `\n校准: <b>${motion}#${f}</b> 选中 <b>${selKey ? CHIP_LABELS[selKey] : '无'}</b> ${cur} · 人工改动 <b>${countDiffs()}</b> 处`;
+  }
+  $('hud').innerHTML = s;
 }
 const bind = (id, fn) => $(id).onclick = () => { fn(); };
 bind('m-idle', () => { state.motion = 'idle'; clock = 0; });
@@ -250,13 +347,128 @@ bind('h-0', () => state.hat = false);
 bind('h-1', () => state.hat = true);
 bind('play', () => { state.paused = !state.paused; });
 bind('anchors', () => { state.showAnchors = !state.showAnchors; });
+
+// ---------- 锚点校准交互 ----------
+function syncEditUI() {
+  $('editbox').style.display = state.edit ? '' : 'none';
+  $('edit').classList.toggle('on', state.edit);
+  const motion = currentMotion();
+  const f = frameOf(motion, clock);
+  const a = anchorOf(motion, f);
+  const box = $('anchor-chips');
+  box.innerHTML = '';
+  for (const k of EDIT_KEYS) {
+    if (!a[k]) continue;
+    const b = document.createElement('button');
+    b.textContent = CHIP_LABELS[k];
+    if (selKey === k) b.classList.add('on');
+    b.onclick = () => { selKey = k; syncEditUI(); };
+    box.appendChild(b);
+  }
+  if (selKey && !a[selKey]) selKey = null;   // 切帧/动作后所选锚点不存在则取消
+}
+$('edit').onclick = () => {
+  state.edit = !state.edit;
+  if (state.edit) { state.paused = true; state.showAnchors = true; if (!selKey) selKey = 'head_top'; }
+  syncEditUI();
+};
+$('exp-json').onclick = () => {
+  const blob = new Blob([JSON.stringify(exportPayload(), null, 2)], {type: 'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'anchors_manual.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  $('edit-status').textContent = '已导出 anchors_manual.json（只含改过的锚点）';
+};
+$('copy-json').onclick = async () => {
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(exportPayload(), null, 2));
+    $('edit-status').textContent = '已复制到剪贴板';
+  } catch (e) {
+    $('edit-status').textContent = '复制失败，请改用导出按钮';
+  }
+};
+$('reset-frame').onclick = () => {
+  const motion = currentMotion();
+  const f = frameOf(motion, clock);
+  if (edits[motion]) { delete edits[motion][f]; localStorage.setItem(LS_KEY, JSON.stringify(edits)); }
+  syncEditUI();
+};
+$('reset-all').onclick = () => {
+  edits = {};
+  localStorage.setItem(LS_KEY, JSON.stringify(edits));
+  selKey = null;
+  syncEditUI();
+};
+function canvasToCell(ev) {
+  const rect = cv.getBoundingClientRect();
+  const mx = (ev.clientX - rect.left) * (cv.width / rect.width);
+  const my = (ev.clientY - rect.top) * (cv.height / rect.height);
+  const wx = (mx / cv.width) * 480 - 240;          // 正交相机: 世界宽 480
+  const wy = 300 - (my / cv.height) * 600;         // 世界高 600
+  return [wx + CW / 2, CH / 2 - wy];               // 世界 → cell 像素(左上原点)
+}
+cv.addEventListener('pointerdown', ev => {
+  if (!state.edit) return;
+  const motion = currentMotion();
+  const f = frameOf(motion, clock);
+  const a = anchorOf(motion, f);
+  const [px, py] = canvasToCell(ev);
+  const hitR = 16 * (480 / cv.width);              // 命中半径(cell 像素)
+  let best = null, bestD = 1e9;
+  for (const k of EDIT_KEYS) {
+    if (!a[k]) continue;
+    const d = Math.hypot(a[k][0] - px, a[k][1] - py);
+    if (d < hitR && d < bestD) { best = k; bestD = d; }
+  }
+  if (best) {
+    selKey = best;
+    dragging = true;
+    state.paused = true;
+    cv.setPointerCapture(ev.pointerId);
+    syncEditUI();
+  }
+});
+cv.addEventListener('pointermove', ev => {
+  if (!state.edit || !dragging || !selKey) return;
+  const motion = currentMotion();
+  const f = frameOf(motion, clock);
+  setAnchor(motion, f, selKey, canvasToCell(ev));
+});
+cv.addEventListener('pointerup', () => { dragging = false; });
+cv.addEventListener('pointerleave', () => { dragging = false; });
+window.addEventListener('keydown', ev => {
+  if (!state.edit) return;
+  const motion = currentMotion();
+  const M = data.motions[motion];
+  if (ev.key === '[' || ev.key === ']') {
+    ev.preventDefault();
+    state.paused = true;
+    state.frame = (state.frame + (ev.key === ']' ? 1 : M.frames - 1)) % M.frames;
+    syncEditUI();
+    return;
+  }
+  if (ev.key === 'Escape') { selKey = null; syncEditUI(); return; }
+  const dir = {ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1]}[ev.key];
+  if (!dir || !selKey) return;
+  ev.preventDefault();
+  const step = ev.shiftKey ? 5 : 1;
+  const f = frameOf(motion, clock);
+  const a = anchorOf(motion, f);
+  if (!a[selKey]) return;
+  setAnchor(motion, f, selKey, [a[selKey][0] + dir[0] * step, a[selKey][1] + dir[1] * step]);
+});
+
 $('spd').oninput = e => { state.speed = e.target.value / 100; $('spd-v').textContent = state.speed.toFixed(1) + 'x'; };
 $('scrub').oninput = e => { state.paused = true; state.frame = +e.target.value; };
 
 await loadAll();
 // URL 参数初始化
 if (qs.get('frame')) state.frame = Math.min(+qs.get('frame'), 7);
+if (state.edit) { state.paused = true; state.showAnchors = true; if (!selKey) selKey = 'head_top'; }
 syncUI(state.frame);
+syncEditUI();
 requestAnimationFrame(tick);
 </script>
 </body>
