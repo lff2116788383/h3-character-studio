@@ -144,7 +144,12 @@
         </select>
         <button id="hot-all">本帧→全部帧</button>
       </div>
-      <div class="note">开启后拖动彩色圆点编辑当前帧热区；“本帧→全部帧”用于静态/导入素体。</div>
+      <div class="row">
+        <button id="anchor-exp">导出锚点JSON</button>
+        <button id="anchor-imp">导入锚点JSON</button>
+        <input id="anchor-file" type="file" accept=".json,application/json" style="display:none">
+      </div>
+      <div class="note">开启后拖动彩色圆点编辑当前帧热区（叠有前一帧洋葱皮）；“本帧→全部帧”用于静态/导入素体。锚点 JSON 可跨工程/跨人传递校准成果。</div>
     </div>
 
     <div class="grp">
@@ -215,9 +220,15 @@ let dragState = null;
 function toast(msg, ms=2200){ const t=$('toast'); t.textContent=msg; t.style.display='block';
   clearTimeout(t._tm); t._tm=setTimeout(()=>t.style.display='none',ms); }
 function slotDefaultHot(slot){ return slot==='headwear'?'head_top':'wrist_r'; }
-function anchorCalib(motion,key){
-  // 已人工校准的锚点；其余为脚本估算——绑武器前应先在热区编辑里校准
-  if(S.direction==='right'&&key==='head_top') return 'manual';
+function anchorCalib(motion,key,dir){
+  // 锚点溯源：prototype_data.json 的 anchor_calibration 由构建产线生成；
+  // 人工标定痕迹只对 right 方向有效，其他方向一律视为估算
+  dir=dir||S.direction;
+  if(dir!=='right') return 'estimate';
+  const cal=builtinData&&builtinData.anchor_calibration;
+  const frames=cal&&cal[motion]&&cal[motion][key];
+  const M=S.dirs.right&&S.dirs.right.motions[motion];
+  if(M&&Array.isArray(frames)&&M.anchors.every((_,i)=>frames.includes(i))) return 'manual';
   return 'estimate';
 }
 function curDir(){ return S.dirs[S.direction]; }
@@ -244,8 +255,8 @@ async function registerBuiltin(id,name,slot,path,extra={}){
 async function initBuiltins(){
   builtinData=await (await fetch('./prototype_data.json')).json();
   const d=builtinData;
-  await registerBuiltin('b_clean_walk','干净裸模 walk','body','assets/clean_body_walk.png',{cols:4,frames:8,series:'clean'});
-  await registerBuiltin('b_clean_attack','干净裸模 attack','body','assets/clean_body_attack.png',{cols:4,frames:8,series:'clean'});
+  await registerBuiltin('b_clean_walk','干净裸模 walk','body','assets/clean_body_walk.png',{cols:4,frames:8,series:'clean',alignedAnchors:true});
+  await registerBuiltin('b_clean_attack','干净裸模 attack','body','assets/clean_body_attack.png',{cols:4,frames:8,series:'clean',alignedAnchors:true});
   await registerBuiltin('b_hair_walk','发型A walk','hair','assets/hair_clean_walk.png',{cols:4,frames:8,series:'clean'});
   await registerBuiltin('b_hair_attack','发型A attack','hair','assets/hair_clean_attack.png',{cols:4,frames:8,series:'clean'});
   await registerBuiltin('b_body_walk','素体 walk','body',d.motions.walk.body,{cols:4,frames:8,series:'jade'});
@@ -292,7 +303,17 @@ function restoreDirsInto(dirs){
     const D=dirs[d];
     for(const m in D.motions||{}){
       const M=D.motions[m];
-      if(M&&assets.has(M.assetId)) S.dirs[d].motions[m]=M;
+      if(M&&assets.has(M.assetId)){
+        // right 方向 + 与产线对齐的内置素体：锚点一律以构建产线校准数据为准
+        // （IndexedDB 可能存有旧估算锚点；导入素体/其他方向保留用户自己的校准）
+        const a=assets.get(M.assetId);
+        const cal=builtinData&&builtinData.motions&&builtinData.motions[m];
+        if(d==='right'&&a&&a.builtin&&a.alignedAnchors&&cal&&Array.isArray(cal.anchors)
+           &&cal.anchors.length===M.frames){
+          S.dirs[d].motions[m]={...M,
+            anchors:cal.anchors.map(x=>({head_top:[...x.head_top],wrist_r:[...x.wrist_r],elbow_r:[...x.elbow_r]}))};
+        }else S.dirs[d].motions[m]=M;
+      }
     }
     for(const s of ['hair','cloth','headwear','weapon']){
       const b=D.bindings&&D.bindings[s]; if(!b) continue;
@@ -389,7 +410,9 @@ function renderLib(){
     ctx.imageSmoothingEnabled=false;
     ctx.drawImage(a.img,0,0,cw,ch,(84-cw*sc)/2,(84-ch*sc)/2,cw*sc,ch*sc);
     const nm=document.createElement('div'); nm.className='nm'; nm.textContent=a.name; nm.title=a.name;
-    const tp=document.createElement('div'); tp.className='tp'; tp.textContent=`${SLOT_NAMES[a.slot]||a.slot} ${a.w}×${a.h}`;
+    const tp=document.createElement('div'); tp.className='tp';
+    tp.textContent=`${SLOT_NAMES[a.slot]||a.slot} ${a.w}×${a.h}`+
+      ((a.series&&a.series!=='通用')?` · ${a.series}`:'');
     card.append(c,nm,tp);
     card.onclick=()=>{S.selAsset=a.id;renderLib();renderAssetPanel();};
     card.ondragstart=ev=>{ev.dataTransfer.setData('text/aid',a.id);ev.dataTransfer.effectAllowed='copy';};
@@ -433,15 +456,24 @@ for(const [id,fn] of [
 }
 $('a-del').onclick=()=>{const a=assets.get(S.selAsset); if(!a)return;
   if(a.builtin){toast('内置资产不可删除');return;}
+  if(!confirm(`删除资产「${a.name}」？已绑定它的槽位会显示未绑定。`))return;
   assets.delete(a.id); if(db)idbDel('assets',a.id); S.selAsset=null; renderLib(); renderAssetPanel();};
 $('a-setbody').onclick=()=>{
   const a=assets.get(S.selAsset); if(!a)return;
   const D=curDir();
   const M=D.motions[S.motion]||(D.motions[S.motion]={assetId:a.id,frames:a.frames,cols:a.cols,fps:11,anchors:[]});
   M.assetId=a.id; M.frames=a.frames; M.cols=a.cols;
-  M.anchors=estimateAnchors(a);
+  // right 方向 + 内置素体：沿用构建产线的人工校准锚点；其余按几何估算（需校准）
+  const cal=builtinData&&builtinData.motions&&builtinData.motions[S.motion];
+  let calibrated=false;
+  if(S.direction==='right'&&a.builtin&&a.alignedAnchors&&cal&&Array.isArray(cal.anchors)
+     &&cal.anchors.length===a.frames){
+    M.anchors=cal.anchors.map(x=>({head_top:[...x.head_top],wrist_r:[...x.wrist_r],elbow_r:[...x.elbow_r]}));
+    calibrated=true;
+  }else M.anchors=estimateAnchors(a);
   $('scrub').max=M.frames-1; S.frame=0; saveProject();
-  toast('已设为 '+S.direction+' '+S.motion+' 素体（热区为估算值，请校准）');
+  toast('已设为 '+S.direction+' '+S.motion+' 素体'+
+    (calibrated?'（人工校准锚点已随产线恢复）':'（热区为估算值，请校准）'));
 };
 function estimateAnchors(a){
   // 导入素体的粗估热区：头顶=bbox顶中点，手腕/肘=右侧中下部；需人工校准。
@@ -483,6 +515,13 @@ function drawFrame(c2,motion,f,dir){
   c2.imageSmoothingEnabled=false;
   const col=f%M.cols,row=Math.floor(f/M.cols);
   const [bw,bh]=assetCell(body);
+  // 洋葱皮：热区编辑时叠前一帧素体幽灵，便于对齐跨帧轨迹
+  if(S.showHot&&f>0){
+    const pc=(f-1)%body.cols, pr=Math.floor((f-1)/body.cols);
+    c2.globalAlpha=0.25;
+    c2.drawImage(body.img,pc*bw,pr*bh,bw,bh,0,0,bw,bh);
+    c2.globalAlpha=1;
+  }
   c2.drawImage(body.img,col*bw,row*bh,bw,bh,0,0,bw,bh);
   const A=M.anchors[Math.min(f,M.anchors.length-1)]||{};
   // 整格图层：衣服 → 发型（发型叠在衣服上，贴近原角色辫子压袍的层次）
@@ -642,10 +681,47 @@ $('b-cloth-only').onclick=()=>{const b=curDir().bindings[S.selSlot]; if(!b||!b.b
   b.byMotion={[S.motion]:b.byMotion[S.motion]};
   renderSlots(); saveProject(); toast(SLOT_NAMES[S.selSlot]+'只保留 '+S.motion);};
 $('b-clearfix').onclick=()=>{const b=curDir().bindings[S.selSlot]; if(b&&b.fix){delete b.fix[S.frame];saveProject();}};
-$('b-clearallfix').onclick=()=>{const b=curDir().bindings[S.selSlot]; if(b){b.fix={};saveProject();}};
+$('b-clearallfix').onclick=()=>{const b=curDir().bindings[S.selSlot]; if(!b)return;
+  const n=Object.keys(b.fix||{}).length;
+  if(!n){toast('没有单帧修正可清除');return;}
+  if(!confirm(`清除${SLOT_NAMES[S.selSlot]}槽全部 ${n} 处单帧修正？`))return;
+  b.fix={};saveProject();};
 $('b-unbind').onclick=()=>{ if(S.selSlot)curDir().bindings[S.selSlot]=null; renderSlots(); saveProject(); };
 $('hot-toggle').onclick=()=>{S.showHot=!S.showHot;$('hot-toggle').classList.toggle('on',S.showHot);};
 $('hot-key').onchange=e=>S.hotKey=e.target.value;
+$('anchor-exp').onclick=()=>{
+  const M=curMotion(); if(!M){toast('当前动作没有素体');return;}
+  const payload={schema:'tool-anchors-v1',direction:S.direction,motion:S.motion,frames:M.frames,
+    anchors:M.anchors.map(a=>JSON.parse(JSON.stringify(a)))};
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(payload,null,1)],{type:'application/json'}));
+  a.download=`anchors-${S.direction}-${S.motion}.json`; a.click(); URL.revokeObjectURL(a.href);
+  toast(`已导出 ${S.direction}/${S.motion} 全帧锚点（${M.frames} 帧）`);
+};
+$('anchor-imp').onclick=()=>{ if(!curMotion()){toast('当前动作没有素体');return;} $('anchor-file').click(); };
+$('anchor-file').onchange=async ev=>{
+  const file=ev.target.files[0]; ev.target.value=''; if(!file) return;
+  try{
+    const p=JSON.parse(await file.text());
+    if(!p||p.schema!=='tool-anchors-v1') throw new Error('schema 不符（应为 tool-anchors-v1）');
+    const M=curMotion();
+    if(!Array.isArray(p.anchors)||p.anchors.length!==M.frames)
+      throw new Error(`帧数不符：文件 ${p.anchors?p.anchors.length:'?'} 帧，当前动作 ${M.frames} 帧`);
+    const KEYS=['head_top','wrist_r','elbow_r'];
+    const pt=v=>Array.isArray(v)&&v.length===2&&Number.isFinite(v[0])&&Number.isFinite(v[1]);
+    M.anchors=p.anchors.map((fr,i)=>{
+      if(!fr||typeof fr!=='object') throw new Error(`第 ${i} 帧格式错误`);
+      const out={};
+      for(const k of KEYS) if(fr[k]!==undefined){
+        if(!pt(fr[k])) throw new Error(`第 ${i} 帧 ${k} 不是 [x,y] 数值`);
+        out[k]=[Math.round(fr[k][0]),Math.round(fr[k][1])];
+      }
+      return out;
+    });
+    renderSlots(); saveProject();
+    toast(`已导入锚点应用到 ${S.direction}/${S.motion}（源: ${p.direction||'?'} / ${p.motion||'?'}）`);
+  }catch(e){ toast('锚点导入失败: '+e.message,4000); }
+};
 $('hot-all').onclick=()=>{const M=curMotion(); if(!M)return;const p=M.anchors[Math.min(S.frame,M.anchors.length-1)][S.hotKey];
   for(const a of M.anchors)a[S.hotKey]=[...p]; saveProject(); toast('已把本帧 '+S.hotKey+' 应用到全部帧');};
 
@@ -663,7 +739,8 @@ $('dir-copy').onclick=()=>{const src=S.dirs.right; if(!src)return;
   curDir().bindings=JSON.parse(JSON.stringify(src.bindings));
   renderSlots(); saveProject();
   toast('已复制 right 绑定到 '+S.direction+'（各方向锚点不同，请逐帧检查微调）');};
-$('dir-clear').onclick=()=>{S.dirs[S.direction]=emptyDir(); renderSlots(); saveProject();
+$('dir-clear').onclick=()=>{ if(!confirm(`清空方向 ${S.direction} 的素体引用与全部绑定/热区？此操作不可撤销（工程 ZIP 可作备份）。`))return;
+  S.dirs[S.direction]=emptyDir(); renderSlots(); saveProject();
   toast('已清空 '+S.direction+'（素体引用与绑定，工程 ZIP 是备份）');};
 $('play').onclick=()=>{S.playing=!S.playing;$('play').textContent=S.playing?'⏸ 暂停':'▶ 播放';};
 $('scrub').oninput=e=>{S.playing=false;$('play').textContent='▶ 播放';S.frame=+e.target.value;};
@@ -737,6 +814,7 @@ async function exportZip(){
   const todo=DIRS.filter(d=>{const M=S.dirs[d]&&S.dirs[d].motions[motion];
     return M&&assets.get(M.assetId);});
   if(!todo.length){toast(`动作 ${motion} 还没有任何方向有素体`);return;}
+  const estDirs=todo.filter(d=>anchorCalib(motion,'wrist_r',d)!=='manual');
   $('exp').disabled=true; $('exp').textContent='导出中…';
   try{
     const files={},directionsMap={},exported=[];
@@ -810,7 +888,9 @@ async function exportZip(){
     const zip=zipStore(files);
     const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([zip],{type:'application/zip'}));
     a.download=`${cfg.id}-${cfg.version}-${motion}.zip`; a.click(); URL.revokeObjectURL(a.href);
-    toast(`已导出 ${exported.map(e=>`${e.dir}×${e.n}帧`).join('、')} · 请解压后人工复核`);
+    toast(`已导出 ${exported.map(e=>`${e.dir}×${e.n}帧`).join('、')}`+
+      (estDirs.length?` · ⚠ ${estDirs.join('/')} 腕锚点未人工校准，武器定位需复核`:'')+
+      ' · 请解压后人工复核');
   }catch(e){ console.error(e); toast('导出失败: '+e.message,4000); }
   $('exp').disabled=false; $('exp').textContent='导出客户端 ZIP';
 }
@@ -1025,11 +1105,32 @@ async function ensure3D(){
   return P3;
 }
 
+// ---------- 键盘快捷键（输入框聚焦时忽略） ----------
+window.addEventListener('keydown',ev=>{
+  const t=ev.target;
+  if(t&&(t.tagName==='INPUT'||t.tagName==='SELECT'||t.tagName==='TEXTAREA'||t.isContentEditable)) return;
+  if(ev.key==='ArrowLeft'||ev.key==='ArrowRight'){
+    const M=curMotion(); if(!M)return;
+    ev.preventDefault();
+    S.playing=false; $('play').textContent='▶ 播放';
+    S.frame=Math.max(0,Math.min(M.frames-1,S.frame+(ev.key==='ArrowRight'?1:-1)));
+    $('scrub').value=S.frame;
+  }else if(ev.code==='Space'){
+    ev.preventDefault(); $('play').click();
+  }
+});
+
 // ---------- 初始化 ----------
 (async function init(){
   try{ db=await idbOpen(); }catch(e){ console.warn('IndexedDB 不可用，工程仅保存在本页会话'); }
-  await initBuiltins();
-  await restoreProject();
+  try{
+    await initBuiltins();
+    await restoreProject();
+  }catch(e){ console.error(e);
+    document.body.insertAdjacentHTML('afterbegin',
+      `<div style="position:fixed;inset:0;background:#1a1410;color:#e8b26a;display:flex;align-items:center;justify-content:center;z-index:999;font:14px/1.8 sans-serif;text-align:center;padding:24px">工具初始化失败：${(e&&e.message)||e}<br>请确认经 <b>python serve.py 8765</b> 启动（prototype_data.json / assets 可访问）后刷新页面</div>`);
+    return;
+  }
   renderLib(); renderAssetPanel(); renderSlots();
   const M0=curMotion(); $('scrub').max=M0?M0.frames-1:0;
   $('dir-copy').style.display=S.direction==='right'?'none':'';

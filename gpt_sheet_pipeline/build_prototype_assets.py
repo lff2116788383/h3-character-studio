@@ -34,16 +34,19 @@ def _point(value, where: str) -> list[int]:
     return [int(round(value[0])), int(round(value[1]))]
 
 
-def apply_manual_anchor_overrides(motions: dict, root: Path = HERE / "output") -> int:
+def apply_manual_anchor_overrides(motions: dict, root: Path = HERE / "output") -> tuple[int, dict]:
     """人工标定覆盖脚本标定；文件不存在则完全不影响原流程。
 
     支持两类输入（后处理的 anchors_manual.json 优先级最高）：
       output/paperdoll_bindings.json — 纸娃娃工具 bindings.json，schema=paperdoll-bindings-v1，
         取其中 motion + anchors 全帧热区轨迹；
-      output/anchors_manual.json — index.html?edit=1 导出，schema=anchors-manual-v1，
+      output/anchors_manual.json — index.html?edit=1 / tool.html 导出，schema=anchors-manual-v1，
         motions.<motion>.<frame>.<key> 稀疏覆盖。
+    返回 (applied, manual)：manual 为 {motion: {key: set(frames)}} 人工标定痕迹，
+    供 prototype_data.json 的 anchor_calibration 元数据使用。
     """
     applied = 0
+    manual: dict[str, dict[str, set[int]]] = {}
 
     def assign(motion: str, frame: int, key: str, value, source: str) -> None:
         nonlocal applied
@@ -55,6 +58,7 @@ def apply_manual_anchor_overrides(motions: dict, root: Path = HERE / "output") -
         if key not in ANCHOR_KEYS:
             raise ValueError(f"[manual anchors] {source}: 未知锚点 {key!r}")
         frames[frame][key] = _point(value, f"{source}:{motion}#{frame}.{key}")
+        manual.setdefault(motion, {}).setdefault(key, set()).add(frame)
         applied += 1
 
     bindings_path = root / "paperdoll_bindings.json"
@@ -82,7 +86,7 @@ def apply_manual_anchor_overrides(motions: dict, root: Path = HERE / "output") -
 
     if applied:
         print(f"[manual anchors] 共覆盖 {applied} 个锚点（人工标定优先）")
-    return applied
+    return applied, manual
 
 
 
@@ -160,7 +164,17 @@ def main() -> None:
     atk_src = json.loads((HERE / "output/attack/anchors_attack.json").read_text(encoding="utf-8"))
     atk_anchors = [{"wrist_r": f["wrist_r"], "elbow_r": f["elbow_r"], "head_top": f["head_top"]}
                    for f in atk_src["frames"]]
-    apply_manual_anchor_overrides({"walk": walk_anchors, "attack": atk_anchors})
+    applied_manual, manual_frames = apply_manual_anchor_overrides(
+        {"walk": walk_anchors, "attack": atk_anchors})
+
+    # 锚点溯源元数据：哪些动作/锚点/帧是人工标定（walk/attack head_top 为人工常量；
+    # wrist_r/elbow_r 看人工覆盖痕迹）。工具据此显示"未校准"警告，客户端不依赖此字段。
+    calibrated: dict = {"walk": {}, "attack": {}}
+    for m, keys in manual_frames.items():
+        for k, fs in keys.items():
+            calibrated.setdefault(m, {})[k] = sorted(fs)
+    for m in ("walk", "attack"):
+        calibrated[m].setdefault("head_top", list(range(8)))
 
     data = {
         "cell": [CW, CH],
@@ -179,6 +193,7 @@ def main() -> None:
         },
         "weapon": {"path": "assets/weapon_rgba.png", "size": list(wsize), "length": 220},
         "headwear": {"hat": {"path": "assets/hat_rgba.png", "size": list(hsize), "mountInsetUp": 0.04}},
+        "anchor_calibration": calibrated,
     }
     (HERE / "prototype" / "prototype_data.json").write_text(
         json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")

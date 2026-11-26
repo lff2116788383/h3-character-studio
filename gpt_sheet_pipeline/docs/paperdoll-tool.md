@@ -27,7 +27,26 @@ python serve.py 8765
 - **武器朝向默认固定角度**：`auto`（跟随肘→腕）默认关闭——腕/肘锚点未人工校准时 auto 会放大误差；
   确需跟手可在武器槽勾选「武器朝向跟随肘→腕（需先校准锚点）」。
 - **锚点校准警告**：腕/肘锚点为脚本估算时，武器槽面板与绑定 toast 会黄字提示
-  「请先热区校准」；目前仅 right.head_top 为人工校准值。
+  「请先热区校准」。校准状态由构建产线写入 `prototype_data.json` 的 `anchor_calibration`
+  元数据（{motion: {key: [帧号…]}}，只对 right 有效），工具据此判断，不再硬编码。
+- **锚点人工校准（2026-11-26 完成）**：walk/attack 全部 32 个腕/肘锚点经 4x 网格目检法校准
+  （`calib_annot.py` 生成 1.5x 网格标注图 → `calib_zoom.py` 4x 精查裁片 → 人工读坐标 →
+  写 `output/anchors_manual.json` → 重跑构建）。校准前后差距极大：旧 walk wrist 估算
+  [88,327] 实际拳位 [195,288]（偏在辫子/背后），旧 attack f4 [196,256] 实际 [199,210]。
+  证据：`output/calib_*.png`、`output/zoom_*.png`。
+- **锚点导入/导出**：热区面板「导出锚点JSON」导出 schema=tool-anchors-v1
+  （direction/motion/frames/anchors 全帧），「导入锚点JSON」带 schema/帧数/[x,y] 校验，
+  可跨工程/跨人传递校准成果。
+- **锚点自愈**：right 方向 + 与产线对齐的内置素体（alignedAnchors 标记，clean/jade 系列
+  均按 ±1px 对齐）在恢复工程/重新设素体时，锚点一律以构建产线校准数据为准——
+  IndexedDB 里的旧估算值会被自动覆盖；导入素体与其他方向保留用户自己的校准。
+- **洋葱皮**：热区编辑时自动叠加前一帧素体幽灵（25% 透明度），便于对齐跨帧轨迹。
+- **键盘快捷键**：←/→ 逐帧、空格播放/暂停（输入框聚焦时忽略）。
+- **武器跟手验证（客户端产物级）**：武器 dx/dy=0 + auto 开启，attack 全程 8 帧刀随拳走
+  （悬垂→背后举→后拉→举过头顶→前刺→下劈→收势），证据
+  `images/tool-weapon-follow-walk.png`、`images/tool-weapon-follow-attack.png`（导出 ZIP 逐帧）。
+  注意 f4 前刺刃出画框、f3 举刀过顶刃过脸属姿势层面，可用单帧「角度/偏移」微调，
+  不是锚点误差。
 - **单帧微调**：暂停在某帧，直接拖动画布上的装备 → 只记录该帧修正 `fix[frame]`；
   全局偏移/缩放在右侧面板改。可清除本帧/全部修正。整格图层（衣服/发型）不做单帧拖动。
 - **热区编辑**：开启「显示/编辑热区」后拖动彩点编辑当前帧；「本帧→全部帧」用于静态或新导入素体。
@@ -84,6 +103,18 @@ python serve.py 8765
 - 导入：`hat_rgba.png` → 自动识别 headwear，卡片 8→9，删除后回到 8；console 无错误；
 - 导出 ZIP：`zipfile.testzip()` 通过；8 帧 256×256，atlas **2064×258**（与 GPT 产线一致），
   region0 `[1,1,256,256]`，duration 42ms，idle_frame=5；证据 `images/tool-export-frame0.png`。
+
+## 实测记录（2026-11-26，生产化轮）
+
+- 锚点校准回灌：`anchors_manual.json`（32 锚点）→ 重跑构建 → `prototype_data.json`
+  带 `anchor_calibration` 元数据；工具刷新后黄字警告消失、绑定 toast 不再告警；
+- 武器重绑（dx/dy=0 + auto）：walk 持刀自然垂于体侧；attack 8 帧全程跟手（逐帧截图+导出
+  ZIP 产物核验），f2 后拉/ f4 前刺位移动作明显，无漂移乱甩；
+- IndexedDB 旧估算锚点自愈：恢复工程后热区圆与校准值一致（修复了"拖过干净裸模的会话
+  保存了估算锚点、刷新后覆盖新校准值"的隐患）；
+- 锚点导入导出闭环：导入 +7px 测试 JSON → wrist 热区圆精确移动 10 backing px（×1.4 zoom），
+  导入原值精确还原；导出 JSON 下载正常；
+- 快捷键 ←/→/空格、洋葱皮、破坏性操作确认、初始化失败兜底均验证；console 无错误。
 
 ## 实测记录（2026-11-26，clean 系列对齐后）
 

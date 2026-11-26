@@ -145,4 +145,14 @@
     腕/肘锚点未校准黄字警告; ④浏览器验证 walk/attack 合成+截图存档。
     遗留: attack f3 发型为程序重建帧（发冠细缺块可接受）; 腕/肘锚点仍未人工校准（绑武器前先热区校准）;
     男素体/第二体型系列走同款 derive 流程扩展（未做, 待需求）。
+11. ~~**纸娃娃工具生产化**~~ ✅ 2026-11-26: ①腕/肘 32 锚点人工校准（4x 网格目检法:
+    `calib_annot.py`/`calib_zoom.py` 出图 → 人读坐标 → `output/anchors_manual.json` 回灌;
+    旧估算错到挂辫子上, walk wrist [88,327]→[195,288]）——武器 auto 跟手全程验证通过
+    （证据 `docs/images/tool-weapon-follow-*.png`）; ②`prototype_data.json` 新增
+    `anchor_calibration` 溯源元数据, 工具据此显警告而非硬编码; ③修复 IndexedDB 旧估算锚点
+    覆盖新校准值的隐患（right+对齐内置素体锚点一律以产线为准）; ④工具健壮性: 锚点
+    导入/导出（tool-anchors-v1 带校验）、洋葱皮、←/→/空格快捷键、破坏性操作确认、
+    初始化失败兜底、导出校验提示、系列徽标。
+    教训: 目检定位拳心用 4x 裁片比肤色 blob 检测可靠（blob 会把手臂腿连成一片）;
+    浏览器像素验证武器位置时注意 z-lab 的实际 zoom 与画布 backing store 坐标（cell×zoom）。
 
