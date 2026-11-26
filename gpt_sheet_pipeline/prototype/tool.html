@@ -55,7 +55,7 @@
 <div id="app">
 <header>
   <b>纸娃娃 · 换装绑定与客户端导出</b>
-  <span class="dim">资产库拖拽 → 热区绑定 → 动画校验 → ZIP 产物</span>
+  <span class="dim">资产库拖拽 → 热区绑定 → 多方向批量 → 动画校验 → ZIP 产物</span>
   <span style="flex:1"></span>
   <a href="./index.html">原型查看器</a>
 </header>
@@ -163,6 +163,11 @@
 </div>
 
 <div id="bar">
+  <span>方向</span><select id="dir-sel" style="width:66px">
+    <option value="right">right</option><option value="left">left</option>
+    <option value="up">up</option><option value="down">down</option></select>
+  <button id="dir-copy" title="把 right 方向的绑定复制到当前方向作起点（各方向锚点不同，需再逐帧微调）" style="display:none">从right复制绑定</button>
+  <button id="dir-clear" title="清空当前方向的素体引用与绑定（工程 ZIP 是备份）" style="display:none">清空方向</button>
   <span>动作</span><button id="m-walk">walk</button><button id="m-attack">attack</button>
   <button id="play">▶ 播放</button>
   <input id="scrub" type="range" min="0" max="7" value="0" style="width:180px">
@@ -189,13 +194,15 @@ const HOT_COLORS = {head_top:'#40ff60', wrist_r:'#ff5050', elbow_r:'#5080ff'};
 const uid = () => 'a' + Math.random().toString(36).slice(2, 9);
 
 const S = {
-  motion:'walk', frame:0, playing:false, zoom:1.4,
+  direction:'right', motion:'walk', frame:0, playing:false, zoom:1.4,
   showHot:false, hotKey:'head_top',
   selAsset:null, selSlot:null,
   filter:{slot:'all', q:'', boundOnly:false},
-  motions:{},                 // walk/attack -> {assetId,frames,cols,fps,anchors:[{head_top,wrist_r,elbow_r}]}
-  bindings:{cloth:null, headwear:null, weapon:null},
+  dirs:{},   // 方向 -> {motions:{walk/attack...}, bindings:{cloth,headwear,weapon}}
 };
+const DIRS=['right','left','up','down'];
+const defaultBindings=()=>({cloth:null,headwear:null,weapon:null});
+const emptyDir=()=>({motions:{walk:null,attack:null},bindings:defaultBindings()});
 let assets = new Map();        // id -> {id,name,slot,tags,cols,frames,w,h,builtin,blob,img}
 let builtinData = null;
 let dragState = null;
@@ -204,7 +211,8 @@ let dragState = null;
 function toast(msg, ms=2200){ const t=$('toast'); t.textContent=msg; t.style.display='block';
   clearTimeout(t._tm); t._tm=setTimeout(()=>t.style.display='none',ms); }
 function slotDefaultHot(slot){ return slot==='headwear'?'head_top':'wrist_r'; }
-function curMotion(){ return S.motions[S.motion]; }
+function curDir(){ return S.dirs[S.direction]; }
+function curMotion(){ const D=curDir(); return D?D.motions[S.motion]:null; }
 function assetCell(a){ const rows=Math.max(1,Math.ceil(a.frames/a.cols));
   return [Math.floor(a.w/a.cols), Math.floor(a.h/rows)]; }
 function offOf(b,f){ const fix=b.fix&&b.fix[f]; return fix?{dx:b.dx+fix.dx,dy:b.dy+fix.dy}:{dx:b.dx,dy:b.dy}; }
@@ -234,9 +242,10 @@ async function initBuiltins(){
     await registerBuiltin(`b_cloth${c}_${m}`,`服装${c} ${m}`,'cloth',d.motions[m].cloth[c],{cols:4,frames:8});
   await registerBuiltin('b_hat','斗笠','headwear',d.headwear.hat.path,{preset:{scale:120/d.headwear.hat.size[1],inset:d.headwear.hat.mountInsetUp}});
   await registerBuiltin('b_weapon','直刀','weapon',d.weapon.path,{preset:{scale:d.weapon.length/d.weapon.size[1]}});
+  for(const d of DIRS) S.dirs[d]=emptyDir();
   for(const m of ['walk','attack']){
     const M=d.motions[m];
-    S.motions[m]={assetId:'b_body_'+m,frames:M.frames,cols:4,fps:M.fps,
+    S.dirs.right.motions[m]={assetId:'b_body_'+m,frames:M.frames,cols:4,fps:M.fps,
       anchors:M.anchors.map(a=>({head_top:[...a.head_top],wrist_r:[...a.wrist_r],elbow_r:[...a.elbow_r]}))};
   }
 }
@@ -259,27 +268,36 @@ function saveProject(){
   clearTimeout(saveTm);
   saveTm=setTimeout(()=>{
     if(!db) return;
-    const motions={};
-    for(const m in S.motions){ const {assetId,frames,cols,fps,anchors}=S.motions[m];
-      motions[m]={assetId,frames,cols,fps,anchors}; }
-    idbPut('kv',{k:'project',settings:readExportSettings(),motions,bindings:S.bindings}).catch(()=>{});
+    idbPut('kv',{k:'project',settings:readExportSettings(),direction:S.direction,dirs:S.dirs}).catch(()=>{});
   },400);
+}
+function restoreDirsInto(dirs){
+  // dirs: {方向 -> {motions,bindings}}；旧格式(motions/bindings 平铺)由调用方迁移为 right
+  if(!dirs) return;
+  for(const d in dirs){
+    if(!DIRS.includes(d)) continue;
+    if(!S.dirs[d]) S.dirs[d]=emptyDir();
+    const D=dirs[d];
+    for(const m in D.motions||{}){
+      const M=D.motions[m];
+      if(M&&assets.has(M.assetId)) S.dirs[d].motions[m]=M;
+    }
+    for(const s of ['cloth','headwear','weapon']){
+      const b=D.bindings&&D.bindings[s]; if(!b) continue;
+      const ids=s==='cloth'?Object.values(b.byMotion||{}):[b.assetId];
+      if(ids.every(id=>!id||assets.has(id))) S.dirs[d].bindings[s]=b;
+    }
+  }
 }
 async function restoreProject(){
   if(!db) return;
   const rows=await idbAll('kv'); const p=rows.find(r=>r.k==='project');
   if(p){
-    if(p.settings) for(const k in p.settings){ /* 设置由输入框初始化后覆盖 */ }
-    if(p.motions) for(const m in p.motions){
-      if(S.motions[m]&&assets.has(p.motions[m].assetId)) S.motions[m]=p.motions[m];
-      else if(p.motions[m].assetId&&assets.has(p.motions[m].assetId)) S.motions[m]=p.motions[m];
-    }
-    if(p.bindings) for(const s in S.bindings){
-      const b=p.bindings[s]; if(!b) continue;
-      const aid=s==='cloth'?(b.byMotion&&Object.values(b.byMotion)[0]):b.assetId;
-      if(assets.has(aid)) S.bindings[s]=b;
-    }
+    restoreDirsInto(p.dirs||(p.motions||p.bindings?
+      {right:{motions:p.motions||{},bindings:p.bindings||defaultBindings()}}:null));
     if(p.settings) applyExportSettings(p.settings);
+    if(p.direction&&DIRS.includes(p.direction)){ S.direction=p.direction;
+      $('dir-sel').value=p.direction; }
   }
   const recs=await idbAll('assets');
   for(const r of recs){
@@ -302,9 +320,11 @@ function guessSlot(name){
   return 'other';
 }
 function isBound(id){
-  for(const s of ['headwear','weapon']){ const b=S.bindings[s]; if(b&&b.assetId===id) return true; }
-  const c=S.bindings.cloth; if(c&&c.byMotion&&Object.values(c.byMotion).includes(id)) return true;
-  for(const m in S.motions) if(S.motions[m].assetId===id) return true;
+  const B=curDir().bindings;
+  for(const s of ['headwear','weapon']){ const b=B[s]; if(b&&b.assetId===id) return true; }
+  const c=B.cloth; if(c&&c.byMotion&&Object.values(c.byMotion).includes(id)) return true;
+  const MS=curDir().motions;
+  for(const m in MS) if(MS[m]&&MS[m].assetId===id) return true;
   return false;
 }
 // ---- 衣服跨动作成组：按名称找姊妹动作资产（服装A walk ↔ 服装A attack） ----
@@ -316,7 +336,7 @@ function clothBase(name){
 function autoGroupCloth(aid, curMotion){
   const a=assets.get(aid); if(!a||a.slot!=='cloth') return {};
   const out={};
-  for(const m in S.motions){
+  for(const m in curDir().motions){
     if(m===curMotion) continue;
     for(const b of assets.values()){
       if(b.slot!=='cloth'||b.id===aid) continue;
@@ -393,10 +413,12 @@ $('a-del').onclick=()=>{const a=assets.get(S.selAsset); if(!a)return;
   assets.delete(a.id); if(db)idbDel('assets',a.id); S.selAsset=null; renderLib(); renderAssetPanel();};
 $('a-setbody').onclick=()=>{
   const a=assets.get(S.selAsset); if(!a)return;
-  const M=curMotion();
+  const D=curDir();
+  const M=D.motions[S.motion]||(D.motions[S.motion]={assetId:a.id,frames:a.frames,cols:a.cols,fps:11,anchors:[]});
   M.assetId=a.id; M.frames=a.frames; M.cols=a.cols;
   M.anchors=estimateAnchors(a);
-  $('scrub').max=M.frames-1; S.frame=0; saveProject(); toast('已设为 '+S.motion+' 素体（热区为估算值，请校准）');
+  $('scrub').max=M.frames-1; S.frame=0; saveProject();
+  toast('已设为 '+S.direction+' '+S.motion+' 素体（热区为估算值，请校准）');
 };
 function estimateAnchors(a){
   // 导入素体的粗估热区：头顶=bbox顶中点，手腕/肘=右侧中下部；需人工校准。
@@ -422,7 +444,7 @@ function estimateAnchors(a){
 
 // ---------- 画布 ----------
 const cv=$('cv'), ctx=cv.getContext('2d');
-function cellSize(){ const a=assets.get(curMotion().assetId); return a?assetCell(a):[256,512]; }
+function cellSize(){ const M=curMotion(); const a=M&&assets.get(M.assetId); return a?assetCell(a):[256,512]; }
 function resizeCanvas(){ const [cw,ch]=cellSize();
   cv.width=Math.round(cw*S.zoom); cv.height=Math.round(ch*S.zoom);
   $('z-lab').textContent=Math.round(S.zoom*100)+'%';
@@ -430,28 +452,29 @@ function resizeCanvas(){ const [cw,ch]=cellSize();
 function evCell(ev){ const r=cv.getBoundingClientRect();
   return [(ev.clientX-r.left)/S.zoom,(ev.clientY-r.top)/S.zoom]; }
 
-function drawFrame(c2,motion,f,forExport=false){
-  const M=S.motions[motion]; const body=assets.get(M.assetId); if(!body)return;
-  const [cw,ch]=assetCell(body);
+function drawFrame(c2,motion,f,dir){
+  dir=dir||S.direction;
+  const D=S.dirs[dir]; const M=D&&D.motions[motion];
+  const body=M&&assets.get(M.assetId); if(!body)return;
+  const B=D.bindings;
   c2.imageSmoothingEnabled=false;
   const col=f%M.cols,row=Math.floor(f/M.cols);
   const [bw,bh]=assetCell(body);
   c2.drawImage(body.img,col*bw,row*bh,bw,bh,0,0,bw,bh);
   const A=M.anchors[Math.min(f,M.anchors.length-1)]||{};
   // 衣服（整格，含全局偏移）
-  const cb=S.bindings.cloth;
+  const cb=B.cloth;
   if(cb&&cb.byMotion&&cb.byMotion[motion]){
     const ca=assets.get(cb.byMotion[motion]);
     if(ca){ const [aw,ah]=assetCell(ca); const cc=f%ca.cols,cr=Math.floor(f/ca.cols);
       c2.drawImage(ca.img,cc*aw,cr*ah,aw,ah,cb.dx,cb.dy,aw,ah); }
   }
-  // 武器（旋转挂载）
-  drawItem(c2,'weapon',A,f);
-  // 头饰
-  drawItem(c2,'headwear',A,f);
+  // 武器（旋转挂载）与头饰
+  drawItem(c2,'weapon',A,f,B);
+  drawItem(c2,'headwear',A,f,B);
 }
-function drawItem(c2,slot,A,f){
-  const b=S.bindings[slot]; if(!b)return;
+function drawItem(c2,slot,A,f,B){
+  const b=B[slot]; if(!b)return;
   const a=assets.get(b.assetId); if(!a)return;
   const hot=A[slotDefaultHot(slot)]; if(!hot)return;
   const off=offOf(b,f); const sc=b.scale||1;
@@ -469,9 +492,11 @@ function drawItem(c2,slot,A,f){
 }
 function itemHit(pos){
   // 返回最上层被点中的可拖槽位（头饰优先，其次武器）
-  const M=curMotion(); const A=M.anchors[Math.min(S.frame,M.anchors.length-1)]||{};
+  const M=curMotion(); if(!M)return null;
+  const A=M.anchors[Math.min(S.frame,M.anchors.length-1)]||{};
+  const B=curDir().bindings;
   for(const slot of ['headwear','weapon']){
-    const b=S.bindings[slot]; if(!b)continue;
+    const b=B[slot]; if(!b)continue;
     const a=assets.get(b.assetId); const hot=A[slotDefaultHot(slot)]; if(!a||!hot)continue;
     // 近似：以挂点为中心、半径=max(36, 图高*scale/2) 的命中域；武器额外覆盖腕→肘方向
     const off=offOf(b,S.frame);
@@ -482,7 +507,8 @@ function itemHit(pos){
   return null;
 }
 function hotHit(pos){
-  const M=curMotion(); const A=M.anchors[Math.min(S.frame,M.anchors.length-1)]||{};
+  const M=curMotion(); if(!M)return null;
+  const A=M.anchors[Math.min(S.frame,M.anchors.length-1)]||{};
   for(const k of ['head_top','wrist_r','elbow_r']){
     const p=A[k]; if(p&&Math.hypot(pos[0]-p[0],pos[1]-p[1])<12/S.zoom+6) return k;
   }
@@ -497,7 +523,7 @@ cv.addEventListener('drop',ev=>{
   if(!['headwear','weapon','cloth'].includes(a.slot)){ toast('请先在右侧把资产类型设为 头盔/武器/衣服'); S.selAsset=aid; renderAssetPanel(); return; }
   const M=curMotion(); const A=M.anchors[Math.min(S.frame,M.anchors.length-1)]||{};
   const b=newBinding(aid,a.slot);
-  S.bindings[a.slot]=b; S.selSlot=a.slot;
+  curDir().bindings[a.slot]=b; S.selSlot=a.slot;
   let extra='';
   if(a.slot==='cloth'){
     const group=autoGroupCloth(aid,S.motion);
@@ -523,12 +549,12 @@ cv.addEventListener('pointerdown',ev=>{
 });
 cv.addEventListener('pointermove',ev=>{
   if(!dragState)return;
-  const pos=evCell(ev); const M=curMotion();
+  const pos=evCell(ev); const M=curMotion(); if(!M)return;
   const fi=Math.min(S.frame,M.anchors.length-1);
   if(dragState.kind==='hot'){
     M.anchors[fi][dragState.key]=[Math.round(pos[0]),Math.round(pos[1])];
   }else{
-    const b=S.bindings[dragState.slot]; if(!b)return;
+    const b=curDir().bindings[dragState.slot]; if(!b)return;
     const A=M.anchors[fi]; const hot=A[slotDefaultHot(dragState.slot)]; if(!hot)return;
     const g={dx:Math.round(pos[0]-hot[0]),dy:Math.round(pos[1]-hot[1])};
     b.fix[S.frame]={dx:g.dx-b.dx,dy:g.dy-b.dy};
@@ -539,9 +565,9 @@ cv.addEventListener('pointerup',()=>{ if(dragState&&dragState.kind==='item')toas
 
 // ---------- 槽位面板 ----------
 function renderSlots(){
-  const box=$('slots'); box.innerHTML='';
+  const box=$('slots'); box.innerHTML=''; const B=curDir().bindings;
   for(const slot of ['cloth','headwear','weapon']){
-    const b=S.bindings[slot];
+    const b=B[slot];
     const row=document.createElement('div'); row.className='row';
     const btn=document.createElement('button'); btn.textContent=SLOT_NAMES[slot]+'槽';
     if(S.selSlot===slot)btn.classList.add('on');
@@ -555,7 +581,7 @@ function renderSlots(){
     }else lab.textContent=b&&assets.get(b.assetId)?assets.get(b.assetId).name:'未绑定';
     row.append(btn,lab); box.appendChild(row);
   }
-  const b=S.bindings[S.selSlot];
+  const b=B[S.selSlot];
   $('slot-edit').style.display=b?'':'none';
   if(!b)return;
   $('b-dx').value=b.dx; $('b-dy').value=b.dy; $('b-scale').value=b.scale;
@@ -572,29 +598,41 @@ for(const [id,fn] of [
   ['b-dx',(b,v)=>b.dx=+v||0],['b-dy',(b,v)=>b.dy=+v||0],
   ['b-scale',(b,v)=>b.scale=+v||1],['b-rot',(b,v)=>b.rot=+v||0],
   ['b-inset',(b,v)=>b.inset=(+v||0)/100]]){
-  $(id).oninput=e=>{const b=S.bindings[S.selSlot]; if(!b)return; fn(b,e.target.value); saveProject();};
+  $(id).oninput=e=>{const b=curDir().bindings[S.selSlot]; if(!b)return; fn(b,e.target.value); saveProject();};
 }
-$('b-auto').onchange=e=>{const b=S.bindings.weapon; if(b){b.auto=e.target.checked;saveProject();}};
-$('b-cloth-all').onclick=()=>{const b=S.bindings.cloth; if(!b)return;
+$('b-auto').onchange=e=>{const b=curDir().bindings.weapon; if(b){b.auto=e.target.checked;saveProject();}};
+$('b-cloth-all').onclick=()=>{const b=curDir().bindings.cloth; if(!b)return;
   const aid=b.byMotion&&b.byMotion[S.motion]; if(!aid){toast('当前动作没有衣服绑定');return;}
-  for(const m in S.motions) b.byMotion[m]=aid;
+  for(const m in curDir().motions) b.byMotion[m]=aid;
   renderSlots(); saveProject(); toast('衣服已应用到全部动作');};
-$('b-cloth-only').onclick=()=>{const b=S.bindings.cloth; if(!b||!b.byMotion)return;
+$('b-cloth-only').onclick=()=>{const b=curDir().bindings.cloth; if(!b||!b.byMotion)return;
   if(!b.byMotion[S.motion]){toast('当前动作没有衣服绑定');return;}
   b.byMotion={[S.motion]:b.byMotion[S.motion]};
   renderSlots(); saveProject(); toast('衣服只保留 '+S.motion);};
-$('b-clearfix').onclick=()=>{const b=S.bindings[S.selSlot]; if(b&&b.fix){delete b.fix[S.frame];saveProject();}};
-$('b-clearallfix').onclick=()=>{const b=S.bindings[S.selSlot]; if(b){b.fix={};saveProject();}};
-$('b-unbind').onclick=()=>{ if(S.selSlot)S.bindings[S.selSlot]=null; renderSlots(); saveProject(); };
+$('b-clearfix').onclick=()=>{const b=curDir().bindings[S.selSlot]; if(b&&b.fix){delete b.fix[S.frame];saveProject();}};
+$('b-clearallfix').onclick=()=>{const b=curDir().bindings[S.selSlot]; if(b){b.fix={};saveProject();}};
+$('b-unbind').onclick=()=>{ if(S.selSlot)curDir().bindings[S.selSlot]=null; renderSlots(); saveProject(); };
 $('hot-toggle').onclick=()=>{S.showHot=!S.showHot;$('hot-toggle').classList.toggle('on',S.showHot);};
 $('hot-key').onchange=e=>S.hotKey=e.target.value;
-$('hot-all').onclick=()=>{const M=curMotion();const p=M.anchors[Math.min(S.frame,M.anchors.length-1)][S.hotKey];
+$('hot-all').onclick=()=>{const M=curMotion(); if(!M)return;const p=M.anchors[Math.min(S.frame,M.anchors.length-1)][S.hotKey];
   for(const a of M.anchors)a[S.hotKey]=[...p]; saveProject(); toast('已把本帧 '+S.hotKey+' 应用到全部帧');};
 
 // ---------- 播放与主循环 ----------
 $('m-walk').onclick=()=>switchMotion('walk');
 $('m-attack').onclick=()=>switchMotion('attack');
-function switchMotion(m){ S.motion=m; S.frame=0; $('scrub').max=curMotion().frames-1; renderSlots(); }
+function switchMotion(m){ S.motion=m; S.frame=0; const M=curMotion();
+  $('scrub').max=M?M.frames-1:0; renderSlots(); }
+$('dir-sel').onchange=e=>{S.direction=e.target.value;S.frame=0;
+  const M=curMotion(); $('scrub').max=M?M.frames-1:0;
+  $('dir-copy').style.display=S.direction==='right'?'none':'';
+  $('dir-clear').style.display=S.direction==='right'?'none':'';
+  renderSlots();};
+$('dir-copy').onclick=()=>{const src=S.dirs.right; if(!src)return;
+  curDir().bindings=JSON.parse(JSON.stringify(src.bindings));
+  renderSlots(); saveProject();
+  toast('已复制 right 绑定到 '+S.direction+'（各方向锚点不同，请逐帧检查微调）');};
+$('dir-clear').onclick=()=>{S.dirs[S.direction]=emptyDir(); renderSlots(); saveProject();
+  toast('已清空 '+S.direction+'（素体引用与绑定，工程 ZIP 是备份）');};
 $('play').onclick=()=>{S.playing=!S.playing;$('play').textContent=S.playing?'⏸ 暂停':'▶ 播放';};
 $('scrub').oninput=e=>{S.playing=false;$('play').textContent='▶ 播放';S.frame=+e.target.value;};
 $('z-in').onclick=()=>{S.zoom=Math.min(4,S.zoom+0.2);resizeCanvas();};
@@ -603,27 +641,33 @@ let last=performance.now(),acc=0;
 function tick(now){
   const dt=(now-last)/1000; last=now;
   const M=curMotion();
-  if(S.playing){ acc+=dt; const step=1/(M.fps||11);
-    while(acc>=step){acc-=step;S.frame=(S.frame+1)%M.frames;} }
   $('m-walk').classList.toggle('on',S.motion==='walk');
   $('m-attack').classList.toggle('on',S.motion==='attack');
-  $('scrub').value=S.frame; $('f-lab').textContent=S.frame+'/'+M.frames;
-  resizeCanvasIfNeeded();
-  ctx.clearRect(0,0,cv.width,cv.height);
-  ctx.save(); ctx.scale(S.zoom,S.zoom);
-  drawFrame(ctx,S.motion,S.frame);
-  if(S.showHot){
-    const A=M.anchors[Math.min(S.frame,M.anchors.length-1)]||{};
-    for(const k in HOT_COLORS){ const p=A[k]; if(!p)continue;
-      ctx.strokeStyle=HOT_COLORS[k]; ctx.lineWidth=1.5/S.zoom;
-      ctx.beginPath();ctx.arc(p[0],p[1],k===S.hotKey?7:5,0,7);ctx.stroke();
-      if(k===S.hotKey){ctx.beginPath();ctx.moveTo(p[0]-10,p[1]);ctx.lineTo(p[0]+10,p[1]);
-        ctx.moveTo(p[0],p[1]-10);ctx.lineTo(p[0],p[1]+10);ctx.stroke();}
+  if(M){
+    if(S.playing){ acc+=dt; const step=1/(M.fps||11);
+      while(acc>=step){acc-=step;S.frame=(S.frame+1)%M.frames;} }
+    $('scrub').max=M.frames-1;
+    $('scrub').value=S.frame; $('f-lab').textContent=S.frame+'/'+M.frames;
+    resizeCanvasIfNeeded();
+    ctx.clearRect(0,0,cv.width,cv.height);
+    ctx.save(); ctx.scale(S.zoom,S.zoom);
+    drawFrame(ctx,S.motion,S.frame);
+    if(S.showHot){
+      const A=M.anchors[Math.min(S.frame,M.anchors.length-1)]||{};
+      for(const k in HOT_COLORS){ const p=A[k]; if(!p)continue;
+        ctx.strokeStyle=HOT_COLORS[k]; ctx.lineWidth=1.5/S.zoom;
+        ctx.beginPath();ctx.arc(p[0],p[1],k===S.hotKey?7:5,0,7);ctx.stroke();
+        if(k===S.hotKey){ctx.beginPath();ctx.moveTo(p[0]-10,p[1]);ctx.lineTo(p[0]+10,p[1]);
+          ctx.moveTo(p[0],p[1]-10);ctx.lineTo(p[0],p[1]+10);ctx.stroke();}
+      }
     }
+    ctx.restore();
+    $('hud').textContent=`${S.direction} ${S.motion} #${S.frame} · 源cell ${cellSize().join('×')}`+
+      (S.selSlot?` · 选中${SLOT_NAMES[S.selSlot]}槽`:'')+(S.playing?'':' · 已暂停(可拖装备修帧)');
+  }else{
+    ctx.clearRect(0,0,cv.width,cv.height);
+    $('hud').textContent=`${S.direction} ${S.motion} · 该方向无素体：导入图片后点「设为当前动作素体」`;
   }
-  ctx.restore();
-  $('hud').textContent=`${S.motion} #${S.frame} · 源cell ${cellSize().join('×')}`+
-    (S.selSlot?` · 选中${SLOT_NAMES[S.selSlot]}槽`:'')+(S.playing?'':' · 已暂停(可拖装备修帧)');
   if(P3&&$('p3d').style.display!=='none') P3.update();
   requestAnimationFrame(tick);
 }
@@ -657,75 +701,84 @@ function canvasBlob(c){ return new Promise(res=>c.toBlob(res,'image/png')); }
 
 async function exportZip(){
   const cfg=readExportSettings(); saveProject();
-  const motion=S.motion,M=curMotion();
-  if(!assets.get(M.assetId)){toast('当前动作没有素体');return;}
+  const motion=S.motion;
+  const todo=DIRS.filter(d=>{const M=S.dirs[d]&&S.dirs[d].motions[motion];
+    return M&&assets.get(M.assetId);});
+  if(!todo.length){toast(`动作 ${motion} 还没有任何方向有素体`);return;}
   $('exp').disabled=true; $('exp').textContent='导出中…';
   try{
-    const [cw,ch]=cellSize();
-    const src=document.createElement('canvas'); src.width=cw; src.height=ch;
-    const sctx=src.getContext('2d',{willReadFrequently:true});
-    const out=document.createElement('canvas'); out.width=cfg.outW; out.height=cfg.outH;
-    const octx=out.getContext('2d',{willReadFrequently:true});
-    const frames=[],entries=[]; let idle=0,minSum=Infinity;
-    for(let f=0;f<M.frames;f++){
-      sctx.clearRect(0,0,cw,ch); drawFrame(sctx,motion,f,true);
-      octx.clearRect(0,0,cfg.outW,cfg.outH);
-      const bb=bboxOf(sctx,cw,ch);
-      if(bb){
-        let bw=bb.x1-bb.x0+1,bh=bb.y1-bb.y0+1;
-        let sc=cfg.fit?Math.min(cfg.maxDim/Math.max(bw,bh),cfg.pivotY/bh,cfg.outW/bw,1):1;
-        const nw=Math.max(1,Math.round(bw*sc)),nh=Math.max(1,Math.round(bh*sc));
-        octx.imageSmoothingEnabled=true; octx.imageSmoothingQuality='high';
-        octx.drawImage(src,bb.x0,bb.y0,bw,bh,
-          Math.round(cfg.pivotX-nw/2),Math.round(cfg.pivotY-nh),nw,nh);
-        if(bb.sum<minSum){minSum=bb.sum;idle=f;}
+    const files={},directionsMap={},exported=[];
+    for(const dir of todo){
+      const D=S.dirs[dir],M=D.motions[motion],body=assets.get(M.assetId);
+      const [cw,ch]=assetCell(body);
+      const src=document.createElement('canvas'); src.width=cw; src.height=ch;
+      const sctx=src.getContext('2d',{willReadFrequently:true});
+      const out=document.createElement('canvas'); out.width=cfg.outW; out.height=cfg.outH;
+      const octx=out.getContext('2d',{willReadFrequently:true});
+      const frames=[],entries=[]; let idle=0,minSum=Infinity;
+      for(let f=0;f<M.frames;f++){
+        sctx.clearRect(0,0,cw,ch); drawFrame(sctx,motion,f,dir);
+        octx.clearRect(0,0,cfg.outW,cfg.outH);
+        const bb=bboxOf(sctx,cw,ch);
+        if(bb){
+          let bw=bb.x1-bb.x0+1,bh=bb.y1-bb.y0+1;
+          let sc=cfg.fit?Math.min(cfg.maxDim/Math.max(bw,bh),cfg.pivotY/bh,cfg.outW/bw,1):1;
+          const nw=Math.max(1,Math.round(bw*sc)),nh=Math.max(1,Math.round(bh*sc));
+          octx.imageSmoothingEnabled=true; octx.imageSmoothingQuality='high';
+          octx.drawImage(src,bb.x0,bb.y0,bw,bh,
+            Math.round(cfg.pivotX-nw/2),Math.round(cfg.pivotY-nh),nw,nh);
+          if(bb.sum<minSum){minSum=bb.sum;idle=f;}
+        }
+        const ob=bboxOf(octx,cfg.outW,cfg.outH);
+        const vb=ob?[ob.x0,ob.y0,ob.x1,ob.y1]:[0,0,0,0];
+        const blob=await canvasBlob(out); const buf=await blob.arrayBuffer();
+        const sha=await sha256Hex(buf);
+        frames.push({buf,vb,sha});
       }
-      const ob=bboxOf(octx,cfg.outW,cfg.outH);
-      const vb=ob?[ob.x0,ob.y0,ob.x1,ob.y1]:[0,0,0,0];
-      const blob=await canvasBlob(out); const buf=await blob.arrayBuffer();
-      const sha=await sha256Hex(buf);
-      frames.push({buf,vb,sha});
+      const n=frames.length,cols=Math.min(cfg.cols,n),rows=Math.ceil(n/cols);
+      const aw=cfg.margin*2+cols*(cfg.outW+cfg.gutter)-cfg.gutter;
+      const ah=cfg.margin*2+rows*(cfg.outH+cfg.gutter)-cfg.gutter;
+      const atlas=document.createElement('canvas'); atlas.width=aw; atlas.height=ah;
+      const actx=atlas.getContext('2d');
+      for(let i=0;i<n;i++){
+        const col=i%cols,row=Math.floor(i/cols);
+        const ox=cfg.margin+col*(cfg.outW+cfg.gutter),oy=cfg.margin+row*(cfg.outH+cfg.gutter);
+        const im=new Image(); im.src=URL.createObjectURL(new Blob([frames[i].buf],{type:'image/png'}));
+        await im.decode(); actx.drawImage(im,ox,oy); URL.revokeObjectURL(im.src);
+        entries.push({path:`frames/${String(i).padStart(5,'0')}.png`,sha256:frames[i].sha,
+          region:[ox,oy,cfg.outW,cfg.outH],visible_bounds:frames[i].vb,
+          source:{source_index:i,source_frame_sha256:frames[i].sha,
+            original:{tool:'paperdoll-tool',direction:dir,motion,source_frame:i}},
+          duration_ms:cfg.frameMs});
+      }
+      const atlasBlob=await canvasBlob(atlas); const atlasBuf=await atlasBlob.arrayBuffer();
+      const animation={version:1,size:[cfg.outW,cfg.outH],pivot:[cfg.pivotX,cfg.pivotY],loop:true,
+        atlas:'atlas.png',effective_source_size:[cfg.outW,cfg.outH],review:'pending',frames:entries};
+      const root=`${cfg.id}/${cfg.version}/`;
+      files[root+dir+'/animation.json']=JSON.stringify(animation,null,1);
+      files[root+dir+'/atlas.png']=atlasBuf;
+      for(let i=0;i<n;i++) files[root+dir+`/frames/${String(i).padStart(5,'0')}.png`]=frames[i].buf;
+      files[root+dir+'/bindings.json']=JSON.stringify(
+        {schema:'paperdoll-bindings-v1',direction:dir,motion,
+         bindings:D.bindings,anchors:M.anchors},null,1);
+      directionsMap[dir]={manifest:`${dir}/animation.json`,idle_frame:idle,generation:'paperdoll-tool'};
+      exported.push({dir,n,aw,ah});
     }
-    // atlas
-    const n=frames.length,cols=Math.min(cfg.cols,n),rows=Math.ceil(n/cols);
-    const aw=cfg.margin*2+cols*(cfg.outW+cfg.gutter)-cfg.gutter;
-    const ah=cfg.margin*2+rows*(cfg.outH+cfg.gutter)-cfg.gutter;
-    const atlas=document.createElement('canvas'); atlas.width=aw; atlas.height=ah;
-    const actx=atlas.getContext('2d');
-    for(let i=0;i<n;i++){
-      const col=i%cols,row=Math.floor(i/cols);
-      const ox=cfg.margin+col*(cfg.outW+cfg.gutter),oy=cfg.margin+row*(cfg.outH+cfg.gutter);
-      const im=new Image(); im.src=URL.createObjectURL(new Blob([frames[i].buf],{type:'image/png'}));
-      await im.decode(); actx.drawImage(im,ox,oy); URL.revokeObjectURL(im.src);
-      entries.push({path:`frames/${String(i).padStart(5,'0')}.png`,sha256:frames[i].sha,
-        region:[ox,oy,cfg.outW,cfg.outH],visible_bounds:frames[i].vb,
-        source:{source_index:i,source_frame_sha256:frames[i].sha,
-          original:{tool:'paperdoll-tool',motion,source_frame:i}},
-        duration_ms:cfg.frameMs});
-    }
-    const atlasBlob=await canvasBlob(atlas); const atlasBuf=await atlasBlob.arrayBuffer();
-    const animation={version:1,size:[cfg.outW,cfg.outH],pivot:[cfg.pivotX,cfg.pivotY],loop:true,
-      atlas:'atlas.png',effective_source_size:[cfg.outW,cfg.outH],review:'pending',frames:entries};
     const character={schema_version:1,id:cfg.id,version:cfg.version,default_direction:'right',
       size:[cfg.outW,cfg.outH],pivot:[cfg.pivotX,cfg.pivotY],pixel_size:cfg.pixelSize,
-      directions:{right:{manifest:'right/animation.json',idle_frame:idle,generation:'paperdoll-tool'}},
+      directions:directionsMap,
       stationary_behavior:'Hold a reviewed balanced frame from the current direction; no separately generated idle animation.'};
     const root=`${cfg.id}/${cfg.version}/`;
-    const files={};
     files[root+'character.json']=JSON.stringify(character,null,1);
-    files[root+'right/animation.json']=JSON.stringify(animation,null,1);
-    files[root+'right/atlas.png']=atlasBuf;
-    for(let i=0;i<n;i++) files[root+`right/frames/${String(i).padStart(5,'0')}.png`]=frames[i].buf;
-    files[root+'bindings.json']=JSON.stringify({schema:'paperdoll-bindings-v1',motion,
-      bindings:S.bindings,anchors:M.anchors},null,1);
     files[root+'README.txt']=
       '纸娃娃工具导出（paperdoll-tool）\n'+
-      '目录结构对齐 hd2d-mmo client assets/characters/<id>/<version>/。\n'+
+      '目录结构对齐 hd2d-mmo client assets/characters/<id>/<version>/，每个方向一个子目录。\n'+
+      '<dir>/bindings.json 可复制为 gpt_sheet_pipeline/output/paperdoll_bindings.json 回灌产线。\n'+
       'review=pending：导入客户端前请逐帧人工复核。\n';
     const zip=zipStore(files);
     const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([zip],{type:'application/zip'}));
     a.download=`${cfg.id}-${cfg.version}-${motion}.zip`; a.click(); URL.revokeObjectURL(a.href);
-    toast(`已导出 ${n} 帧 · atlas ${aw}×${ah} · 请解压后人工复核`);
+    toast(`已导出 ${exported.map(e=>`${e.dir}×${e.n}帧`).join('、')} · 请解压后人工复核`);
   }catch(e){ console.error(e); toast('导出失败: '+e.message,4000); }
   $('exp').disabled=false; $('exp').textContent='导出客户端 ZIP';
 }
@@ -744,18 +797,19 @@ async function saveProjectZip(){
       assetList.push({id:a.id,name:a.name,slot:a.slot,tags:a.tags||'',
         cols:a.cols,frames:a.frames,w:a.w,h:a.h,file:fname});
     }
-    const project={schema:'paperdoll-project-v1',version:1,saved:new Date().toISOString(),
-      export_settings:cfg,motions:S.motions,bindings:S.bindings,assets:assetList};
+    const project={schema:'paperdoll-project-v2',version:2,saved:new Date().toISOString(),
+      export_settings:cfg,direction:S.direction,dirs:S.dirs,assets:assetList};
     files['project.json']=JSON.stringify(project,null,1);
     files['README.txt']=
-      '纸娃娃工具工程 ZIP（paperdoll-project-v1）\n'+
-      'project.json：导出设置、动作素体引用、槽位绑定/单帧修正/热区轨迹、自定义资产清单。\n'+
-      'assets/*.png：自定义资产原图（内置资产不入包，导入端自动重建）。\n'+
+      '纸娃娃工具工程 ZIP（paperdoll-project-v2）\n'+
+      'project.json：导出设置、各方向素体引用、槽位绑定/单帧修正/热区轨迹、自定义资产清单。\n'+
+      'assets/*.png：自定义资产原图（内置资产不入包，导入端自动重建）；兼容导入 v1 工程包。\n'+
       '在 tool.html 点「打开工程」选择本 ZIP 即恢复编辑现场；客户端产物请用「导出客户端 ZIP」。\n';
     const zip=zipStore(files);
     const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([zip],{type:'application/zip'}));
     a.download=`${cfg.id}-${cfg.version}-project.zip`; a.click(); URL.revokeObjectURL(a.href);
-    toast(`工程已保存：自定义资产 ${assetList.length} 个 · 绑定/热区/导出设置已打包`);
+    const nDir=DIRS.filter(d=>Object.values(S.dirs[d].motions).some(Boolean)).length;
+    toast(`工程已保存：自定义资产 ${assetList.length} 个 · ${nDir} 个方向的绑定/热区/设置已打包`);
   }catch(e){ console.error(e); toast('保存工程失败: '+e.message,4000); }
   $('prj-save').disabled=false; $('prj-save').textContent='保存工程';
 }
@@ -791,7 +845,8 @@ async function openProjectZip(file){
   const pj=files.get('project.json');
   if(!pj) throw new Error('缺少 project.json（客户端产物 ZIP 不能当工程导入）');
   const proj=JSON.parse(new TextDecoder().decode(pj));
-  if(proj.schema!=='paperdoll-project-v1') throw new Error('project.json schema 不符: '+proj.schema);
+  if(!['paperdoll-project-v1','paperdoll-project-v2'].includes(proj.schema))
+    throw new Error('project.json schema 不符: '+proj.schema);
   let imported=0;
   for(const meta of proj.assets||[]){
     const data=files.get(meta.file); if(!data||assets.has(meta.id)) continue;
@@ -804,17 +859,10 @@ async function openProjectZip(file){
     imported++;
   }
   if(proj.export_settings) applyExportSettings(proj.export_settings);
-  for(const m in proj.motions||{}){
-    const M=proj.motions[m];
-    if(S.motions[m]&&assets.has(M.assetId)) S.motions[m]=M;
-  }
-  const bs=proj.bindings||{};
-  for(const s of ['cloth','headwear','weapon']){
-    const b=bs[s]; if(!b) continue;
-    const ids=s==='cloth'?Object.values(b.byMotion||{}):[b.assetId];
-    if(ids.every(id=>!id||assets.has(id))) S.bindings[s]=b;
-  }
-  $('scrub').max=curMotion().frames-1; S.frame=Math.min(S.frame,curMotion().frames-1);
+  restoreDirsInto(proj.dirs||(proj.schema==='paperdoll-project-v1'?
+    {right:{motions:proj.motions||{},bindings:proj.bindings||defaultBindings()}}:null));
+  const M0=curMotion();
+  if(M0){ $('scrub').max=M0.frames-1; S.frame=Math.min(S.frame,M0.frames-1); }
   renderLib(); renderAssetPanel(); renderSlots(); saveProject();
   toast(`工程已导入：恢复自定义资产 ${imported}/${(proj.assets||[]).length} 个 · 绑定/热区/设置已还原`);
 }
@@ -909,12 +957,16 @@ async function ensure3D(){
   const src=document.createElement('canvas');
   P3={lastKey:'',update(){
     const cfg=readExportSettings();
-    const key=[S.motion,S.frame,compositeRev,cfg.outW,cfg.outH,cfg.pivotX,cfg.pivotY,cfg.maxDim,cfg.fit].join('|');
+    const key=[S.direction,S.motion,S.frame,compositeRev,cfg.outW,cfg.outH,cfg.pivotX,cfg.pivotY,cfg.maxDim,cfg.fit].join('|');
     if(key!==P3.lastKey){
       P3.lastKey=key;
-      const [cw,ch]=cellSize(); src.width=cw; src.height=ch;
-      const sctx=src.getContext('2d',{willReadFrequently:true});
-      sctx.clearRect(0,0,cw,ch); drawFrame(sctx,S.motion,S.frame,true);
+      const M=curMotion();
+      if(!M) mesh.visible=false;
+      else{
+        mesh.visible=true;
+        const [cw,ch]=cellSize(); src.width=cw; src.height=ch;
+        const sctx=src.getContext('2d',{willReadFrequently:true});
+        sctx.clearRect(0,0,cw,ch); drawFrame(sctx,S.motion,S.frame);
       comp.width=cfg.outW; comp.height=cfg.outH;
       const octx=comp.getContext('2d',{willReadFrequently:true});
       octx.clearRect(0,0,cfg.outW,cfg.outH);
@@ -932,8 +984,8 @@ async function ensure3D(){
       const g=new THREE.PlaneGeometry(cfg.outW*ps,cfg.outH*ps);
       g.translate(0,(cfg.outH/2-cfg.pivotY)*ps,0);   // 原点移到 pivot(脚底)
       mesh.geometry=g; mesh.position.set(0,cfg.pivotY*ps,0);
+      }
     }
-    mesh.visible=true;
     if($('p3-bill').checked) mesh.lookAt(camera.position); else mesh.rotation.set(0,0,0);
     placeCam(); renderer.render(scene,camera);
   }};
@@ -947,7 +999,9 @@ async function ensure3D(){
   await initBuiltins();
   await restoreProject();
   renderLib(); renderAssetPanel(); renderSlots();
-  $('scrub').max=curMotion().frames-1;
+  const M0=curMotion(); $('scrub').max=M0?M0.frames-1:0;
+  $('dir-copy').style.display=S.direction==='right'?'none':'';
+  $('dir-clear').style.display=S.direction==='right'?'none':'';
   resizeCanvas();
   requestAnimationFrame(tick);
 })();

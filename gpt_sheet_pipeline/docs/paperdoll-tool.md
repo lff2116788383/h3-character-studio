@@ -31,6 +31,10 @@ python serve.py 8765
 - **衣服成组绑定**：拖入带动作词的服装（如「服装A walk」）会自动找同名姊妹资产（「服装A attack」）一并绑定，
   槽位标签显示实际绑定的动作（walk+attack）。名称不含动作词、或同一件衣服通用于所有动作时，
   在衣服槽面板用「应用到全部动作」；「只留当前动作」撤销成组。
+- **多方向批量**：底栏「方向」切换 right/left/up/down，每方向独立的素体引用、绑定与热区轨迹。
+  内置资产只有 right；其他方向导入图片后「设为当前动作素体」开始，可用「从right复制绑定」
+  把已校准绑定复制过来作起点（各方向锚点不同，需逐帧微调），「清空方向」重置当前方向。
+  导出客户端 ZIP 时自动打包所有有素体的方向。
 
 ## 导出（客户端契约）
 
@@ -38,12 +42,13 @@ python serve.py 8765
 
 ```
 <id>/<version>/
-├── character.json            # size/pivot/pixel_size/directions.right/idle_frame
+├── character.json            # size/pivot/pixel_size/directions.<dir>/idle_frame（所有已导方向）
 ├── right/
 │   ├── atlas.png             # 8列(可改)+gutter 2+margin 1；region 与客户端 AtlasTexture 对齐
 │   ├── animation.json        # frames[].region/visible_bounds/duration_ms/sha256/source
-│   └── frames/00000.png…     # 逐帧底账
-├── bindings.json             # 槽位绑定+单帧修正+热区轨迹（回灌产线/二期用）
+│   ├── frames/00000.png…     # 逐帧底账
+│   └── bindings.json         # 该方向槽位绑定+单帧修正+热区轨迹（回灌产线用）
+├── left/ …                   # 其余有素体的方向同构；无素体的方向不导出
 └── README.txt
 ```
 
@@ -71,7 +76,8 @@ python serve.py 8765
 
 ## 回灌产线（已接通）
 
-纸娃娃 ZIP 中的 `bindings.json` 可复制为 `gpt_sheet_pipeline/output/paperdoll_bindings.json`，
+纸娃娃 ZIP 中对应方向子目录的 `bindings.json`（如 `right/bindings.json`）可复制为
+`gpt_sheet_pipeline/output/paperdoll_bindings.json`，
 再运行 `build_prototype_assets.py`，其 `anchors` 热区轨迹会覆盖脚本标定并重建 `prototype_data.json`。
 `index.html?edit=1` 导出的稀疏锚点则放 `output/anchors_manual.json`；两者同时存在时后者优先。
 文件不存在时构建流程不变。非法 schema/动作/帧号/锚点会直接报错，不会静默写坏数据。
@@ -82,8 +88,8 @@ python serve.py 8765
 
 ```
 project.zip
-├── project.json          # schema=paperdoll-project-v1：导出设置、动作素体引用、
-│                         # 槽位绑定+单帧修正+热区轨迹、自定义资产清单
+├── project.json          # schema=paperdoll-project-v2：导出设置、各方向素体引用、
+│                         # 槽位绑定+单帧修正+热区轨迹、自定义资产清单（兼容导入 v1）
 ├── assets/<id>.png       # 自定义资产原图（内置资产不入包，导入端自动重建）
 └── README.txt
 ```
@@ -97,6 +103,6 @@ project.zip
 ## 边界与下一步
 
 - 一期 2D 绑定+导出、二期 3D 场景缩放演示均已交付；热区回灌产线已接通；工程 ZIP 保存/分享已交付；
-  衣服跨动作成组绑定已交付。
-- 多方向批量：后续按需。
+  衣服跨动作成组绑定已交付；多方向批量（方向切换/每方向绑定/全方向导出）已交付。
+- 四方向资产的 GPT 生图量产（成本与阶段见 `docs/four-direction-expansion-plan.md`）仍待拍板。
 - 不修改 hd2d-mmo 客户端；产物拷贝接入属另行立项。

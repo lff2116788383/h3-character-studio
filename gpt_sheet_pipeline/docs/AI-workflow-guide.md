@@ -123,14 +123,14 @@
    `build_prototype_assets.py`/`build_character.py` 里统一按头顶+脚线双基准对齐, 否则跨动作小件锚点都要另标。
 8. ~~**锚点人工校准闭环的构建侧接入**~~ ✅ 2026-11-26:
    `prototype/index.html?edit=1` 导出 `anchors_manual.json`（schema=anchors-manual-v1，稀疏覆盖）；
-   纸娃娃工具导出 `bindings.json`（schema=paperdoll-bindings-v1，全帧热区轨迹）。
+   纸娃娃工具每方向导出 `<dir>/bindings.json`（schema=paperdoll-bindings-v1，全帧热区轨迹）。
    用法: 分别复制为 `output/anchors_manual.json` / `output/paperdoll_bindings.json` 后运行
    `build_prototype_assets.py`；**人工标定优先于脚本标定**，anchors_manual 优先级最高。
    文件不存在则原流程零变化；schema/动作/帧号/锚点非法会明确报错。
    已测: 临时目录双 schema 单测 + 真实构建 walk#4 [122,73]→[122,46]→恢复 [122,73]，重建产物无 diff。
 9. ~~纸娃娃工具一期+二期~~ ✅ 2026-11-26: `prototype/tool.html`（文档 `docs/paperdoll-tool.md`）。
    一期: 资产库筛选/拖拽绑定/单帧微调/客户端 ZIP 导出; 二期: 3D 场景缩放演示(billboard/透视相机);
-   工程 ZIP 保存/分享（paperdoll-project-v1, 资产+绑定+热区+设置整包带走）、
-   衣服跨动作成组绑定（同名姊妹资产自动成组+应用全部动作按钮）已交付。
-   后续: 多方向批量。
+   工程 ZIP 保存/分享（paperdoll-project-v2, 资产+绑定+热区+设置整包带走）、
+   衣服跨动作成组绑定、多方向批量（right/left/up/down 每方向独立绑定, 全方向导出）已交付。
+   工具本体功能已齐; 四方向 GPT 生图量产仍待拍板（见 item 2）。
 
