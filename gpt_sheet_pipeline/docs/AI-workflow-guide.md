@@ -19,6 +19,7 @@
 - 生图 API: 密钥在 `gpt_sheet_pipeline/.secret-ui.env`（**绝不入库**），endpoint/model 见 `gpt_client.py`。
   价格 ≈ **0.09 元/张，50s/张，无 seed（不可复现，靠抽卡）**。抽卡预算: 每资产 ×2 取优。
 - 本地服务: `cd prototype && python serve.py 8765` → http://127.0.0.1:8765/index.html（支持 URL 参数组合）。
+  Windows 注册表会把 `.js` 映射成 `text/plain`，浏览器因此拒绝加载 ES module；`serve.py` 已内置 MIME 修正，勿删。
 
 ## 3. 资产产线（已跑通的路径）
 
@@ -62,6 +63,7 @@
 | 武器单图+锚点旋转挂载 | 构造上零漂移; 浏览器实测 walk/attack 全帧跟手 |
 | weaponOrder z 序切换 | 原型实测起手帧刀在身后(1)、劈下在身前(0) |
 | 素体身份锚点 | 脱衣后脸/辫子/头饰保持, QC 0.85+; 配准光流中位 0.87~2.23px |
+| 斗笠 head_top 挂载 | y=70 浮空 → y=100 帽沿压住头顶发带; attack f4 + walk f0/f4 浏览器复验通过 |
 | 三轮否决: 空心大件分层 | 无形人台 0.795 / 空心+锚点 0.78 — **GPT 画不准没有身体的衣服** |
 | 混合分层资源账 | 10衣×10武×3发型=600搭配 → 23 件资源 ≈15 元 vs 预生成 840 元/1.9GB |
 
@@ -79,7 +81,13 @@
 - 换装系统完整方案（架构/资源账/落地步骤）: `docs/hd2d-equipment-swap-plan.md`
 - three.js 原型: `prototype/index.html` + `prototype_data.json`（由 `build_prototype_assets.py` 生成）
 - 运行: `cd prototype && python serve.py 8765`
-- 已实测组合: walk+刀(挂载✓), attack起手+绿袍(z序身后✓), attack劈下+绿袍+斗笠(挂载✓,斗笠锚点 y 待微调)
+- 已实测组合: walk+刀(挂载✓), attack起手+绿袍(z序身后✓), attack劈下+绿袍+斗笠(挂载✓, head_top y=100)
+- 斗笠落位复验（2026-11-26，attack f4，head_top=(106,100)）:
+
+  ![斗笠落位对照](images/hat-mount-check.png)
+
+  左：同帧无头饰（露出头顶白色发带）；右：斗笠挂载，帽沿压住发带与发顶，无浮空缝隙。
+  全身图 `images/hat-on-full.png`；walk f0/f4 复核 `images/hat-walk-f0.png`、`images/hat-walk-f4.png`。
 - 产物截图: 会话记录; 组合自查用 URL 参数
 
 ## 9. Git 红线
@@ -91,9 +99,8 @@
 
 ## 10. 当前待办（接手从这里开始）
 
-1. **斗笠 head_top 复验**: 锚点已从 y=70 修正为 y=100（`output/attack/anchors_attack.json` 与
-   `build_prototype_assets.py` 的 WALK_HEAD_TOP 已改, `prototype_data.json` 已重建），
-   但**未浏览器复验**——若仍浮空, 微调 `mountInsetUp`（hat pivot 上下偏移）。
+1. ~~**斗笠 head_top 复验**~~ ✅ 2026-11-26 通过: y 已从 70 修正为 100, attack f4 与 walk f0/f4
+   浏览器复验帽沿贴住头顶发带, 无浮空, 无需再调 `mountInsetUp`。证据见 §8 截图。
 2. 四方向扩展: 当前全部只有 right 向; 量产需 ×4 方向（账: 每套服装 4 动作 ×4 向 ≈ 64 sheet）。
 3. 素体赤足化: 攻击帧素体布鞋从袍下露出（body 与 cloth 脚部姿势差）, 素体宜赤足/最小鞋。
 4. 服装A/B 的 walk 服装对素体偏移 1~2px, attack 0~2px — 已在 clothOffset 校正, 无需再调。
