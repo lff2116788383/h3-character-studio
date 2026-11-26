@@ -154,7 +154,10 @@ function drawAnchors(motion, frame) {
     const g = new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(x - 8, y), new THREE.Vector3(x + 8, y),
       new THREE.Vector3(x, y - 8), new THREE.Vector3(x, y + 8)]);
-    anchorGroup.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({color: c})));
+    // transparent+高 renderOrder: 让十字进透明队列且排在所有精灵层(1-5)之后, 否则必然被盖住
+    const line = new THREE.LineSegments(g, new THREE.LineBasicMaterial({color: c, depthTest: false, transparent: true}));
+    line.renderOrder = 10;
+    anchorGroup.add(line);
   }
 }
 

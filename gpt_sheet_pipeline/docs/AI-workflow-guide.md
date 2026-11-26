@@ -63,7 +63,7 @@
 | 武器单图+锚点旋转挂载 | 构造上零漂移; 浏览器实测 walk/attack 全帧跟手 |
 | weaponOrder z 序切换 | 原型实测起手帧刀在身后(1)、劈下在身前(0) |
 | 素体身份锚点 | 脱衣后脸/辫子/头饰保持, QC 0.85+; 配准光流中位 0.87~2.23px |
-| 斗笠 head_top 挂载 | y=70 浮空 → y=100 帽沿压住头顶发带; attack f4 + walk f0/f4 浏览器复验通过 |
+| 斗笠 head_top 挂载 | 首版误用 attack 标定→walk 全帧浮空 25px+双动作偏左 19px; 实测重标 attack[125,100]/walk[122,73]系 后帽沿压发带 |
 | 三轮否决: 空心大件分层 | 无形人台 0.795 / 空心+锚点 0.78 — **GPT 画不准没有身体的衣服** |
 | 混合分层资源账 | 10衣×10武×3发型=600搭配 → 23 件资源 ≈15 元 vs 预生成 840 元/1.9GB |
 
@@ -75,19 +75,26 @@
 4. diff 提取服装层（边缘污染 73%）→ 已被"武器单图+锚点"和"整套锚点引导"取代
 5. 质心做 sheet 对齐基准（被袍子质量带偏）; 用头脚双基准
 6. H3 本机跑（Windows+RTX3070 不满足 Linux/CUDA13）; H3 产线走云端 `--url`
+7. **跨动作/跨方向复用同一套锚点标定**——walk 与 attack 素体是不同生成批次, 头冠线在 cell 内
+   相差 26px, 真实头中心 x≈125.5; 锚点表必须逐动作×方向从素体像素实测, 上原型前先做逐帧接触模拟
 
 ## 8. 方案文档与原型
 
 - 换装系统完整方案（架构/资源账/落地步骤）: `docs/hd2d-equipment-swap-plan.md`
 - three.js 原型: `prototype/index.html` + `prototype_data.json`（由 `build_prototype_assets.py` 生成）
 - 运行: `cd prototype && python serve.py 8765`
-- 已实测组合: walk+刀(挂载✓), attack起手+绿袍(z序身后✓), attack劈下+绿袍+斗笠(挂载✓, head_top y=100)
-- 斗笠落位复验（2026-11-26，attack f4，head_top=(106,100)）:
-
-  ![斗笠落位对照](images/hat-mount-check.png)
-
-  左：同帧无头饰（露出头顶白色发带）；右：斗笠挂载，帽沿压住发带与发顶，无浮空缝隙。
-  全身图 `images/hat-on-full.png`；walk f0/f4 复核 `images/hat-walk-f0.png`、`images/hat-walk-f4.png`。
+- 已实测组合: walk+刀(挂载✓), attack起手+绿袍(z序身后✓), attack劈下+绿袍+斗笠(挂载✓)
+- 斗笠挂载复验（2026-11-26, 两轮）:
+  - 第一轮只验 attack f4 即判"通过"——**误判**; 用户抽查 walk 帧当场抓出浮空。复验必须逐动作逐帧, 不能只看单帧。
+  - 像素级复测: walk 与 attack 素体头冠线相差 26px(walk 51 / attack 77), 真实头中心 x≈125.5;
+    首版锚点共用 y≈96-100 / x≈102-108 → walk 全帧浮空 24~27px、双动作整体偏左 ~19px。
+  - 修正: attack head_top x→125(居中, y=100 不变); walk 重标 [122,73]系(头冠线+attack 校准 δ=22)。
+    浏览器复验 walk f0/f4 + attack f4, 帽沿均压住头顶发带, 无浮空。
+  - A/B 证据: `images/debug-hat-walk-f4.png`(现状 vs 修正)、`images/debug-hat-attack-x.png`(x=106 vs 125);
+    终态对照: ![斗笠落位对照](images/hat-mount-check.png), 全身 `images/hat-on-full.png`、
+    walk `images/hat-walk-f0.png`、`images/hat-walk-f4.png`。
+- 锚点调试十字曾被衣服/头饰盖住(不透明线材质在不透明队列先画): 已改为 transparent+renderOrder=10,
+  现在十字始终盖在最上层。
 - 产物截图: 会话记录; 组合自查用 URL 参数
 
 ## 9. Git 红线
@@ -99,9 +106,16 @@
 
 ## 10. 当前待办（接手从这里开始）
 
-1. ~~**斗笠 head_top 复验**~~ ✅ 2026-11-26 通过: y 已从 70 修正为 100, attack f4 与 walk f0/f4
-   浏览器复验帽沿贴住头顶发带, 无浮空, 无需再调 `mountInsetUp`。证据见 §8 截图。
-2. 四方向扩展: 当前全部只有 right 向; 量产需 ×4 方向（账: 每套服装 4 动作 ×4 向 ≈ 64 sheet）。
+1. ~~**斗笠 head_top 复验**~~ ✅ 2026-11-26 两轮完成: 第一轮只验 attack 即判通过属误判, 用户抽查
+   walk 抓出浮空; 复测后 attack x→125、walk 重标 [122,73]系, 浏览器复验 walk f0/f4 + attack f4 全部贴合。
+   详见 §8 与 §7.7 教训。
+2. 四方向扩展: 当前全部只有 right 向; 量产需 ×4 方向。成本评估与分阶段方案见
+   `docs/four-direction-expansion-plan.md`（评估稿, 待拍板, 先 Phase 1 四向试点再量产）。
+   注意 §7.7: 四向锚点全部要逐方向实测。
 3. 素体赤足化: 攻击帧素体布鞋从袍下露出（body 与 cloth 脚部姿势差）, 素体宜赤足/最小鞋。
 4. 服装A/B 的 walk 服装对素体偏移 1~2px, attack 0~2px — 已在 clothOffset 校正, 无需再调。
 5. 客户端接入（另行立项, 需用户拍板才可动 hd2d-mmo）: 衣服 clips 切换 + 小件锚点 Sprite3D。
+6. despill 紫边: 素体/服装/斗笠边缘有粉紫色 halo（matte 残留, 截图可见）, 需强化 despill 或
+   边缘 1px 腐蚀; 动 `common.py` 前先做前后 A/B, 别悄悄改影响全部存量资产。
+7. walk 与 attack 素体未共配准（头冠线差 26px、脚底对齐但头顶高度不一致）: 量产前在
+   `build_prototype_assets.py`/`build_character.py` 里统一按头顶+脚线双基准对齐, 否则跨动作小件锚点都要另标。

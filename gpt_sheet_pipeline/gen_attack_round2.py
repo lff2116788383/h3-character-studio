@@ -23,14 +23,14 @@ PICK = WORK / "attack_body_a1.png"
 
 # a1 网格目测标注 (cell 内坐标, 256x512, y 向下)
 FRAMES = [
-    {"wrist_r": [148, 260], "elbow_r": [130, 215], "head_top": [106, 100]},
-    {"wrist_r": [150, 192], "elbow_r": [128, 235], "head_top": [106, 100]},
-    {"wrist_r": [95, 152], "elbow_r": [118, 200], "head_top": [106, 100]},
-    {"wrist_r": [130, 155], "elbow_r": [108, 205], "head_top": [106, 100]},
-    {"wrist_r": [196, 256], "elbow_r": [150, 250], "head_top": [106, 100]},
-    {"wrist_r": [182, 300], "elbow_r": [148, 268], "head_top": [106, 100]},
-    {"wrist_r": [168, 285], "elbow_r": [140, 255], "head_top": [106, 100]},
-    {"wrist_r": [145, 270], "elbow_r": [128, 230], "head_top": [106, 100]},
+    {"wrist_r": [148, 260], "elbow_r": [130, 215], "head_top": [125, 100]},
+    {"wrist_r": [150, 192], "elbow_r": [128, 235], "head_top": [125, 100]},
+    {"wrist_r": [95, 152], "elbow_r": [118, 200], "head_top": [125, 100]},
+    {"wrist_r": [130, 155], "elbow_r": [108, 205], "head_top": [125, 100]},
+    {"wrist_r": [196, 256], "elbow_r": [150, 250], "head_top": [125, 100]},
+    {"wrist_r": [182, 300], "elbow_r": [148, 268], "head_top": [125, 100]},
+    {"wrist_r": [168, 285], "elbow_r": [140, 255], "head_top": [125, 100]},
+    {"wrist_r": [145, 270], "elbow_r": [128, 230], "head_top": [125, 100]},
 ]
 # 武器前后序表 (mir2x weaponOrder 式): 1=画在身体后, 0=画在身前
 WEAPON_ORDER_ATTACK = [0, 0, 1, 1, 0, 0, 0, 0]

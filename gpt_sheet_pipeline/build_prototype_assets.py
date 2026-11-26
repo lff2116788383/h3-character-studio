@@ -18,8 +18,11 @@ OUT.mkdir(parents=True, exist_ok=True)
 COLS, ROWS = 4, 2
 CW, CH = 256, 512
 
-# walk 素体 head_top (网格目测, 帽冠接触点; 首版 70 偏高 30px, 斗笠浮空修正)
-WALK_HEAD_TOP = [[106, 100], [108, 98], [106, 98], [102, 98], [104, 98], [108, 96], [106, 98], [102, 96]]
+# walk 素体 head_top: 2026-11-26 按实测重标 (头冠线 51-52 + attack 校准 δ=22; x=实测头中心 121-123)。
+# 教训: 首版沿用了 attack 的 y≈96-100 / x≈102-108, 但 walk 与 attack 素体是不同生成批次,
+# 头冠线在 cell 内相差 26px, 真实头中心 x≈125.5 —— 曾导致 walk 全帧斗笠浮空 24~27px + 整体偏左 19px。
+# 锚点表必须逐动作×方向实测, 不可跨动作复用。
+WALK_HEAD_TOP = [[122, 73], [123, 74], [122, 74], [121, 74], [122, 73], [122, 74], [122, 74], [121, 74]]
 
 
 def reassemble(cells: list[Image.Image], size=(CW, CH)) -> Image.Image:
