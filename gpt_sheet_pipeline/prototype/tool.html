@@ -118,6 +118,10 @@
           <label id="b-rot-lab">角度°</label><input id="b-rot" type="number" step="1" value="0"></div>
         <div class="row" id="b-auto-row"><label><input id="b-auto" type="checkbox" style="width:auto"> 武器朝向跟随肘→腕</label></div>
         <div class="row" id="b-inset-row"><label>挂点(距底%)</label><input id="b-inset" type="number" step="1" value="4"></div>
+        <div class="row" id="b-cloth-row">
+          <button id="b-cloth-all" title="把当前动作的衣服应用到 walk+attack 全部动作">应用到全部动作</button>
+          <button id="b-cloth-only" title="只保留当前动作的衣服绑定">只留当前动作</button>
+        </div>
         <div class="row">
           <button id="b-clearfix">清除本帧修正</button>
           <button id="b-clearallfix">清除全部修正</button>
@@ -303,6 +307,24 @@ function isBound(id){
   for(const m in S.motions) if(S.motions[m].assetId===id) return true;
   return false;
 }
+// ---- 衣服跨动作成组：按名称找姊妹动作资产（服装A walk ↔ 服装A attack） ----
+function clothBase(name){
+  let s=name.toLowerCase();
+  for(const w of ['walk','attack']) s=s.replace(w,'');
+  return s.replace(/[\s_-]+/g,'');
+}
+function autoGroupCloth(aid, curMotion){
+  const a=assets.get(aid); if(!a||a.slot!=='cloth') return {};
+  const out={};
+  for(const m in S.motions){
+    if(m===curMotion) continue;
+    for(const b of assets.values()){
+      if(b.slot!=='cloth'||b.id===aid) continue;
+      if(b.name.toLowerCase().includes(m)&&clothBase(b.name)===clothBase(a.name)){ out[m]=b.id; break; }
+    }
+  }
+  return out;
+}
 function renderLib(){
   const chips=$('slot-chips'); chips.innerHTML='';
   for(const [v,lab] of FILTERS){
@@ -476,13 +498,19 @@ cv.addEventListener('drop',ev=>{
   const M=curMotion(); const A=M.anchors[Math.min(S.frame,M.anchors.length-1)]||{};
   const b=newBinding(aid,a.slot);
   S.bindings[a.slot]=b; S.selSlot=a.slot;
-  if(a.slot!=='cloth'){
+  let extra='';
+  if(a.slot==='cloth'){
+    const group=autoGroupCloth(aid,S.motion);
+    for(const m in group) b.byMotion[m]=group[m];
+    const ms=Object.keys(b.byMotion);
+    if(ms.length>1) extra=`（成组 ${ms.join('+')}）`;
+  }else{
     const hot=A[slotDefaultHot(a.slot)]||[pos[0],pos[1]];
     b.dx=Math.round(pos[0]-hot[0]); b.dy=Math.round(pos[1]-hot[1]);
   }
   S.playing=true; $('play').textContent='⏸ 暂停';
   renderSlots(); saveProject();
-  toast(`已绑定「${a.name}」到${SLOT_NAMES[a.slot]}槽 · 播放检查，暂停拖动可修单帧`);
+  toast(`已绑定「${a.name}」到${SLOT_NAMES[a.slot]}槽${extra} · 播放检查，暂停拖动可修单帧`);
 });
 cv.addEventListener('pointerdown',ev=>{
   const pos=evCell(ev);
@@ -521,7 +549,9 @@ function renderSlots(){
     const lab=document.createElement('span'); lab.style.flex='1';
     if(slot==='cloth'){
       const aid=b&&b.byMotion&&b.byMotion[S.motion];
-      lab.textContent=aid&&assets.get(aid)?assets.get(aid).name+'（'+S.motion+'）':'未绑定';
+      const ms=b&&b.byMotion?Object.keys(b.byMotion).filter(m=>b.byMotion[m]):[];
+      const nm=aid&&assets.get(aid)?assets.get(aid).name:'未绑定';
+      lab.textContent=nm+(ms.length?`（${ms.join('+')}）`:'');
     }else lab.textContent=b&&assets.get(b.assetId)?assets.get(b.assetId).name:'未绑定';
     row.append(btn,lab); box.appendChild(row);
   }
@@ -531,6 +561,7 @@ function renderSlots(){
   $('b-dx').value=b.dx; $('b-dy').value=b.dy; $('b-scale').value=b.scale;
   $('b-rot').value=b.rot||0;
   $('b-auto-row').style.display=S.selSlot==='weapon'?'':'none';
+  $('b-cloth-row').style.display=S.selSlot==='cloth'?'':'none';
   $('b-rot-lab').style.display=S.selSlot==='cloth'?'none':'';
   $('b-rot').style.display=S.selSlot==='cloth'?'none':'';
   $('b-inset-row').style.display=S.selSlot==='headwear'?'':'none';
@@ -544,6 +575,14 @@ for(const [id,fn] of [
   $(id).oninput=e=>{const b=S.bindings[S.selSlot]; if(!b)return; fn(b,e.target.value); saveProject();};
 }
 $('b-auto').onchange=e=>{const b=S.bindings.weapon; if(b){b.auto=e.target.checked;saveProject();}};
+$('b-cloth-all').onclick=()=>{const b=S.bindings.cloth; if(!b)return;
+  const aid=b.byMotion&&b.byMotion[S.motion]; if(!aid){toast('当前动作没有衣服绑定');return;}
+  for(const m in S.motions) b.byMotion[m]=aid;
+  renderSlots(); saveProject(); toast('衣服已应用到全部动作');};
+$('b-cloth-only').onclick=()=>{const b=S.bindings.cloth; if(!b||!b.byMotion)return;
+  if(!b.byMotion[S.motion]){toast('当前动作没有衣服绑定');return;}
+  b.byMotion={[S.motion]:b.byMotion[S.motion]};
+  renderSlots(); saveProject(); toast('衣服只保留 '+S.motion);};
 $('b-clearfix').onclick=()=>{const b=S.bindings[S.selSlot]; if(b&&b.fix){delete b.fix[S.frame];saveProject();}};
 $('b-clearallfix').onclick=()=>{const b=S.bindings[S.selSlot]; if(b){b.fix={};saveProject();}};
 $('b-unbind').onclick=()=>{ if(S.selSlot)S.bindings[S.selSlot]=null; renderSlots(); saveProject(); };
