@@ -1,0 +1,12 @@
+config:
+  id: crescent-traveler
+  version: v1
+  pixel_size: 0.009
+  default_direction: right
+  frames: 8
+  loop_ms: 1125
+  palette_colors: 96
+  pivot: [128, 240]
+directions: [right]
+work_root: output/compare
+out_root: output/compare/character

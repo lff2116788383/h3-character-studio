@@ -1,0 +1,12 @@
+config:
+  id: jade-traveler
+  version: v1
+  pixel_size: 0.009
+  default_direction: right
+  frames: 27
+  loop_ms: 1125
+  palette_colors: 96
+  pivot: [128, 240]
+directions: [down, up, left, right]
+work_root: output
+out_root: output/character

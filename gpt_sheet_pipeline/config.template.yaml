@@ -1,0 +1,14 @@
+# GPT sheet 工作流角色配置
+# 用法: 复制本文件为 config.yaml 后修改
+config:
+  id: jade-traveler            # 角色 ID (Godot character.json 使用)
+  version: v1
+  pixel_size: 0.009            # hd2d-mmo 主角世界缩放
+  default_direction: right
+  frames: 27                   # 每方向目标帧数 (27帧循环 = 4 sheet)
+  loop_ms: 1125                # 循环总时长 (与 h3 产线一致)
+  palette_colors: 96           # 全方向共享色板
+  pivot: [128, 240]            # 脚底锚点 (与 crescent-traveler 一致)
+directions: [down, up, left, right]
+work_root: output              # sheet 中间产物
+out_root: output/character     # 最终产出 (character.json + 各方向目录)
