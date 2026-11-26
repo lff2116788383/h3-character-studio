@@ -1,0 +1,47 @@
+# 共享几何标注: crescent-traveler 原版帧0 与 GPT 最优帧通用
+# (两帧已经 fit_canvas 规范化到同一 256 坐标系, 脚底 y≈240, 中心 x≈128)
+parts:
+  - id: braid-left
+    kind: tube
+    points: [[100, 60], [88, 95], [82, 132]]
+    radius: 8
+  - id: braid-right
+    kind: tube
+    points: [[150, 62], [162, 100], [168, 138]]
+    radius: 8
+  - id: head
+    kind: ellipsoid
+    spec: [128, 48, 22, 24]
+    slope: 0.75
+    yaw: 0.25
+  - id: torso
+    kind: ellipsoid
+    spec: [126, 100, 24, 26]
+    slope: 0.7
+  - id: skirt
+    kind: ellipsoid
+    spec: [122, 152, 40, 32]
+    slope: 0.55
+  - id: arm-front
+    kind: tube
+    points: [[146, 95], [156, 115], [158, 132]]
+    radius: 5
+  - id: arm-back
+    kind: tube
+    points: [[104, 95], [96, 115], [94, 130]]
+    radius: 5
+  - id: leg-front
+    kind: tube
+    points: [[136, 180], [142, 215], [140, 238]]
+    radius: 7
+  - id: leg-back
+    kind: tube
+    points: [[112, 180], [108, 215], [110, 238]]
+    radius: 7
+# 金属/饰件: 胸前银饰串、腰带银扣、护腕×2、发饰
+silver_polys:
+  - [[114, 84], [142, 84], [142, 102], [114, 102]]
+  - [[108, 104], [148, 104], [148, 120], [108, 120]]
+  - [[88, 122], [100, 122], [100, 132], [88, 132]]
+  - [[152, 122], [164, 122], [164, 132], [152, 132]]
+  - [[96, 50], [110, 50], [110, 62], [96, 62]]

@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>hd2d-mmo 换装原型 · 锚点分层 + weaponOrder</title>
+<style>
+  html,body{margin:0;height:100%;background:#17171b;color:#ddd;font:13px/1.5 "Microsoft YaHei",system-ui,sans-serif;display:flex}
+  #view{flex:1;display:flex;align-items:center;justify-content:center}
+  #panel{width:270px;padding:14px;background:#202024;border-left:1px solid #333;box-sizing:border-box}
+  #panel h1{font-size:14px;margin:0 0 10px;color:#8fc7ff}
+  .grp{margin-bottom:12px}
+  .grp .lab{color:#999;margin-bottom:4px;font-size:12px}
+  button{background:#2e2e34;color:#ddd;border:1px solid #444;border-radius:4px;padding:4px 10px;margin:2px;cursor:pointer;font-size:12px}
+  button.on{background:#2f5d8f;border-color:#5a9bd5}
+  button:disabled{opacity:.4;cursor:default}
+  #hud{font-size:11px;color:#9a9a9a;white-space:pre-line;border-top:1px solid #333;padding-top:8px}
+  #hud b{color:#ffd76e}
+  input[type=range]{width:100%}
+  .note{color:#c96;font-size:11px}
+</style>
+</head>
+<body>
+<div id="view"><canvas id="cv"></canvas></div>
+<div id="panel">
+  <h1>换装原型 · mir2x 分层结构</h1>
+  <div class="grp"><div class="lab">动作</div>
+    <button id="m-idle">待机</button><button id="m-walk">行走</button><button id="m-attack">攻击(挥砍)</button>
+  </div>
+  <div class="grp"><div class="lab">cloth 衣服槽（整套·锚点引导）</div>
+    <button id="c-none">素体</button><button id="c-A">服装A</button><button id="c-B">服装B</button>
+  </div>
+  <div class="grp"><div class="lab">weapon 武器槽（单图+锚点）</div>
+    <button id="w-0">空手</button><button id="w-1">直刀</button>
+  </div>
+  <div class="grp"><div class="lab">headwear 头饰槽（单图+head_top）</div>
+    <button id="h-0">无</button><button id="h-1">斗笠</button>
+  </div>
+  <div class="grp"><div class="lab">hair 发型槽</div>
+    <span class="note">烘焙于素体/服装（原型限制）；装备头饰时按 mir2x 规则视为被覆盖</span>
+  </div>
+  <div class="grp"><div class="lab">播放速度 <span id="spd-v">1.0x</span></div>
+    <input id="spd" type="range" min="30" max="200" value="100">
+  </div>
+  <div class="grp"><div class="lab">逐帧（暂停时拖动）</div>
+    <input id="scrub" type="range" min="0" max="7" value="0">
+  </div>
+  <div class="grp">
+    <button id="play">暂停/播放</button><button id="anchors">锚点调试</button>
+  </div>
+  <div id="hud">loading…</div>
+</div>
+<script type="module">
+import * as THREE from './vendor/three.module.js';
+
+const qs = new URLSearchParams(location.search);
+const state = {
+  motion: qs.get('motion') || 'walk',          // idle | walk | attack
+  cloth: qs.get('cloth') || 'none',            // none | A | B
+  weapon: qs.get('weapon') === '1',
+  hat: qs.get('hat') === '1',
+  paused: qs.get('paused') === '1',
+  frame: qs.get('frame') ? +qs.get('frame') : 0,
+  speed: 1.0, showAnchors: qs.get('anchors') === '1',
+  attackHold: -1,                              // 攻击结束回 walk 的过渡
+};
+
+const data = await (await fetch('./prototype_data.json')).json();
+const CELL = data.cell, CW = CELL[0], CH = CELL[1];
+
+// ---------- three 场景 ----------
+const cv = document.getElementById('cv');
+cv.width = 760; cv.height = 950;
+const renderer = new THREE.WebGLRenderer({canvas: cv, alpha: true, antialias: false});
+renderer.setPixelRatio(1);
+const scene = new THREE.Scene();
+const cam = new THREE.OrthographicCamera(-240, 240, 300, -300, -10, 10);
+
+function px2world(px, py) { return [px - CW / 2, CH / 2 - py]; }
+
+function texOf(path) {
+  const t = new THREE.TextureLoader().load(path);
+  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter;
+  t.generateMipmaps = false; t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+function sheetTex(path) {
+  const t = texOf(path);
+  t.repeat.set(1 / 4, 1 / 2);
+  return t;
+}
+function layer(w, h, order) {
+  const g = new THREE.PlaneGeometry(w, h);
+  const m = new THREE.MeshBasicMaterial({transparent: true, depthTest: false, depthWrite: false});
+  const mesh = new THREE.Mesh(g, m);
+  mesh.renderOrder = order;
+  scene.add(mesh);
+  return mesh;
+}
+function setCellUV(mesh, frame) {
+  if (!mesh.material.map) return;
+  const col = frame % 4, row = Math.floor(frame / 4);
+  mesh.material.map.offset.set(col / 4, 0.5 - row * 0.5);
+}
+
+// 层: 武器(后) z1 / 素体 z2 / 衣服 z3 / 武器(前) z4 / 头饰 z5 —— mir2x draw 顺序
+const L = {
+  weaponBack: layer(CW, CH, 1),
+  body: layer(CW, CH, 2),
+  cloth: layer(CW, CH, 3),
+  weaponFront: layer(CW, CH, 4),
+  head: layer(120, 120, 5),
+};
+// 单图层 pivot=底部中心(挂点), 素体/衣服层 pivot=cell 中心
+for (const k of ['weaponBack', 'weaponFront']) L[k].position.set(0, -CH / 2 + CH / 2, 0);
+const TX = {};
+
+async function loadAll() {
+  for (const m of ['walk', 'attack']) {
+    TX[`body_${m}`] = sheetTex(data.motions[m].body);
+    for (const x of ['A', 'B']) TX[`cloth${x}_${m}`] = sheetTex(data.motions[m].cloth[x]);
+  }
+  TX.weapon = texOf(data.weapon.path);
+  TX.hat = texOf(data.headwear.hat.path);
+  // 武器/头饰 plane 尺寸 = 原始像素, pivot 底部中心(挂点=origin)
+  for (const k of ['weaponBack', 'weaponFront']) {
+    const [w, h] = data.weapon.size, s = data.weapon.length / h;
+    L[k].geometry.dispose();
+    const g = new THREE.PlaneGeometry(w * s, h * s);
+    g.translate(0, (h * s) / 2, 0);          // 底边(握把)移到 origin, 刀尖朝 +Y
+    L[k].geometry = g;
+    L[k].material.map = TX.weapon;
+  }
+  {
+    const [w, h] = data.headwear.hat.size, s = 120 / h, inset = data.headwear.hat.mountInsetUp;
+    L.head.geometry.dispose();
+    const g = new THREE.PlaneGeometry(w * s, h * s);
+    g.translate(0, h * s * (0.5 - inset), 0);  // 帽底接触点上移 inset 后对齐 origin
+    L.head.geometry = g;
+    L.head.material.map = TX.hat;
+  }
+}
+
+// 锚点调试层
+const anchorGroup = new THREE.Group();
+scene.add(anchorGroup);
+const COLORS = {wrist_r: 0xff4040, elbow_r: 0x4060ff, head_top: 0x40ff60};
+function drawAnchors(motion, frame) {
+  anchorGroup.clear();
+  if (!state.showAnchors) return;
+  const a = data.motions[motion].anchors[frame];
+  for (const [k, c] of Object.entries(COLORS)) {
+    if (!a[k]) continue;
+    const [x, y] = px2world(a[k][0], a[k][1]);
+    const g = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(x - 8, y), new THREE.Vector3(x + 8, y),
+      new THREE.Vector3(x, y - 8), new THREE.Vector3(x, y + 8)]);
+    anchorGroup.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({color: c})));
+  }
+}
+
+// ---------- 播放 ----------
+function currentMotion() { return state.motion === 'idle' ? 'walk' : state.motion; }
+function frameOf(motion, t) {
+  const M = data.motions[motion];
+  if (state.paused) return Math.min(state.frame, M.frames - 1);
+  if (motion === 'idle') return 0;
+  if (M.loop) return Math.floor(t * M.fps * state.speed) % M.frames;
+  const f = Math.floor(t * M.fps * state.speed);
+  return f >= M.frames ? -1 : f;   // 攻击一次性, -1 = 播完
+}
+
+let clock = 0, last = performance.now();
+function tick(now) {
+  const dt = (now - last) / 1000; last = now;
+  if (!state.paused) clock += dt;
+  const motion = currentMotion();
+  const M = data.motions[motion];
+  let f = frameOf(motion, clock);
+  if (f === -1) { state.motion = 'idle'; clock = 0; f = 0; }   // 攻击结束→待机
+  syncUI(f);
+
+  const wo = M.weaponOrder[f];
+  // 素体 / 衣服 (先赋贴图再切 UV)
+  L.body.material.map = TX[`body_${motion}`];
+  setCellUV(L.body, f);
+  if (state.cloth !== 'none') {
+    L.cloth.visible = true;
+    L.cloth.material.map = TX[`cloth${state.cloth}_${motion}`];
+    setCellUV(L.cloth, f);
+    const [dx, dy] = M.clothOffset[state.cloth];
+    const [ox, oy] = px2world(CW / 2 + dx, CH / 2 + dy);
+    L.cloth.position.set(ox, oy, 0);
+  } else L.cloth.visible = false;
+
+  // 武器: 腕/肘锚点旋转挂载 + weaponOrder 前后层切换 (mir2x 式)
+  const wpn = state.weapon && data.weapon;
+  for (const k of ['weaponBack', 'weaponFront']) L[k].visible = false;
+  if (wpn) {
+    const a = M.anchors[f], [wx, wy] = px2world(a.wrist_r[0], a.wrist_r[1]),
+          [ex, ey] = px2world(a.elbow_r[0], a.elbow_r[1]);
+    const ang = Math.atan2(wy - ey, wx - ex) - Math.PI / 2;  // 刀刃初始朝上
+    const mesh = wo === 1 ? L.weaponBack : L.weaponFront;
+    mesh.visible = true;
+    mesh.position.set(wx, wy, 0);
+    mesh.rotation.z = ang;
+  }
+
+  // 头饰: head_top 挂载; mir2x 规则: 头饰覆盖发型(此处发型烘焙, 视觉近似)
+  L.head.visible = state.hat;
+  if (state.hat) {
+    const a = M.anchors[f], [hx, hy] = px2world(a.head_top[0], a.head_top[1]);
+    L.head.position.set(hx, hy, 0);
+  }
+  drawAnchors(motion, f);
+  hud(motion, f, wo);
+  renderer.render(scene, cam);
+  requestAnimationFrame(tick);
+}
+
+// ---------- UI ----------
+const $ = id => document.getElementById(id);
+function sel(id, on) { $(id).classList.toggle('on', on); }
+function syncUI(f) {
+  $('scrub').value = f;
+  sel('m-idle', state.motion === 'idle'); sel('m-walk', state.motion === 'walk');
+  sel('m-attack', state.motion === 'attack');
+  sel('c-none', state.cloth === 'none'); sel('c-A', state.cloth === 'A'); sel('c-B', state.cloth === 'B');
+  sel('w-0', !state.weapon); sel('w-1', state.weapon);
+  sel('h-0', !state.hat); sel('h-1', state.hat);
+}
+function hud(motion, f, wo) {
+  $('hud').innerHTML =
+    `动作 <b>${motion}</b> 帧 <b>${f}</b>/${data.motions[motion].frames} · weaponOrder <b>${wo}</b>(${wo === 1 ? '身后' : '身前'})\n` +
+    `槽位: cloth=${state.cloth} weapon=${state.weapon ? '直刀' : '无'} headwear=${state.hat ? '斗笠' : '无'}\n` +
+    `锚点: wrist=${motion === 'attack' ? 'attack表' : 'walk表'} · 速度 ${state.speed.toFixed(1)}x${state.paused ? ' · 已暂停' : ''}`;
+}
+const bind = (id, fn) => $(id).onclick = () => { fn(); };
+bind('m-idle', () => { state.motion = 'idle'; clock = 0; });
+bind('m-walk', () => { state.motion = 'walk'; clock = 0; });
+bind('m-attack', () => { state.motion = 'attack'; clock = 0; });
+bind('c-none', () => state.cloth = 'none');
+bind('c-A', () => state.cloth = 'A');
+bind('c-B', () => state.cloth = 'B');
+bind('w-0', () => state.weapon = false);
+bind('w-1', () => state.weapon = true);
+bind('h-0', () => state.hat = false);
+bind('h-1', () => state.hat = true);
+bind('play', () => { state.paused = !state.paused; });
+bind('anchors', () => { state.showAnchors = !state.showAnchors; });
+$('spd').oninput = e => { state.speed = e.target.value / 100; $('spd-v').textContent = state.speed.toFixed(1) + 'x'; };
+$('scrub').oninput = e => { state.paused = true; state.frame = +e.target.value; };
+
+await loadAll();
+// URL 参数初始化
+if (qs.get('frame')) state.frame = Math.min(+qs.get('frame'), 7);
+syncUI(state.frame);
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>

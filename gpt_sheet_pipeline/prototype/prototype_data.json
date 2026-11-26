@@ -1,0 +1,382 @@
+{
+ "cell": [
+  256,
+  512
+ ],
+ "motions": {
+  "idle": {
+   "base": "walk",
+   "frame": 0
+  },
+  "walk": {
+   "frames": 8,
+   "fps": 11,
+   "loop": true,
+   "body": "assets/body_walk.png",
+   "cloth": {
+    "A": "assets/clothA_walk.png",
+    "B": "assets/clothB_walk.png"
+   },
+   "clothOffset": {
+    "A": [
+     0,
+     1
+    ],
+    "B": [
+     -1,
+     2
+    ]
+   },
+   "anchors": [
+    {
+     "wrist_r": [
+      85,
+      322
+     ],
+     "elbow_r": [
+      100,
+      272
+     ],
+     "ankle_a": [
+      100,
+      440
+     ],
+     "ankle_b": [
+      142,
+      465
+     ],
+     "head_top": [
+      106,
+      100
+     ]
+    },
+    {
+     "wrist_r": [
+      90,
+      326
+     ],
+     "elbow_r": [
+      108,
+      275
+     ],
+     "ankle_a": [
+      95,
+      420
+     ],
+     "ankle_b": [
+      150,
+      478
+     ],
+     "head_top": [
+      108,
+      98
+     ]
+    },
+    {
+     "wrist_r": [
+      88,
+      324
+     ],
+     "elbow_r": [
+      106,
+      272
+     ],
+     "ankle_a": [
+      100,
+      455
+     ],
+     "ankle_b": [
+      175,
+      468
+     ],
+     "head_top": [
+      106,
+      98
+     ]
+    },
+    {
+     "wrist_r": [
+      80,
+      320
+     ],
+     "elbow_r": [
+      100,
+      270
+     ],
+     "ankle_a": [
+      105,
+      468
+     ],
+     "ankle_b": [
+      185,
+      452
+     ],
+     "head_top": [
+      102,
+      98
+     ]
+    },
+    {
+     "wrist_r": [
+      85,
+      330
+     ],
+     "elbow_r": [
+      105,
+      278
+     ],
+     "ankle_a": [
+      95,
+      452
+     ],
+     "ankle_b": [
+      140,
+      478
+     ],
+     "head_top": [
+      104,
+      98
+     ]
+    },
+    {
+     "wrist_r": [
+      92,
+      330
+     ],
+     "elbow_r": [
+      110,
+      278
+     ],
+     "ankle_a": [
+      95,
+      420
+     ],
+     "ankle_b": [
+      150,
+      478
+     ],
+     "head_top": [
+      108,
+      96
+     ]
+    },
+    {
+     "wrist_r": [
+      88,
+      328
+     ],
+     "elbow_r": [
+      106,
+      275
+     ],
+     "ankle_a": [
+      100,
+      458
+     ],
+     "ankle_b": [
+      180,
+      468
+     ],
+     "head_top": [
+      106,
+      98
+     ]
+    },
+    {
+     "wrist_r": [
+      82,
+      322
+     ],
+     "elbow_r": [
+      102,
+      272
+     ],
+     "ankle_a": [
+      105,
+      472
+     ],
+     "ankle_b": [
+      190,
+      458
+     ],
+     "head_top": [
+      102,
+      96
+     ]
+    }
+   ],
+   "weaponOrder": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  "attack": {
+   "frames": 8,
+   "fps": 12,
+   "loop": false,
+   "body": "assets/body_attack.png",
+   "cloth": {
+    "A": "assets/clothA_attack.png",
+    "B": "assets/clothB_attack.png"
+   },
+   "clothOffset": {
+    "A": [
+     -1,
+     0
+    ],
+    "B": [
+     2,
+     1
+    ]
+   },
+   "anchors": [
+    {
+     "wrist_r": [
+      148,
+      260
+     ],
+     "elbow_r": [
+      130,
+      215
+     ],
+     "head_top": [
+      106,
+      100
+     ]
+    },
+    {
+     "wrist_r": [
+      150,
+      192
+     ],
+     "elbow_r": [
+      128,
+      235
+     ],
+     "head_top": [
+      106,
+      100
+     ]
+    },
+    {
+     "wrist_r": [
+      95,
+      152
+     ],
+     "elbow_r": [
+      118,
+      200
+     ],
+     "head_top": [
+      106,
+      100
+     ]
+    },
+    {
+     "wrist_r": [
+      130,
+      155
+     ],
+     "elbow_r": [
+      108,
+      205
+     ],
+     "head_top": [
+      106,
+      100
+     ]
+    },
+    {
+     "wrist_r": [
+      196,
+      256
+     ],
+     "elbow_r": [
+      150,
+      250
+     ],
+     "head_top": [
+      106,
+      100
+     ]
+    },
+    {
+     "wrist_r": [
+      182,
+      300
+     ],
+     "elbow_r": [
+      148,
+      268
+     ],
+     "head_top": [
+      106,
+      100
+     ]
+    },
+    {
+     "wrist_r": [
+      168,
+      285
+     ],
+     "elbow_r": [
+      140,
+      255
+     ],
+     "head_top": [
+      106,
+      100
+     ]
+    },
+    {
+     "wrist_r": [
+      145,
+      270
+     ],
+     "elbow_r": [
+      128,
+      230
+     ],
+     "head_top": [
+      106,
+      100
+     ]
+    }
+   ],
+   "weaponOrder": [
+    0,
+    0,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0
+   ]
+  }
+ },
+ "weapon": {
+  "path": "assets/weapon_rgba.png",
+  "size": [
+   134,
+   925
+  ],
+  "length": 220
+ },
+ "headwear": {
+  "hat": {
+   "path": "assets/hat_rgba.png",
+   "size": [
+    897,
+    469
+   ],
+   "mountInsetUp": 0.04
+  }
+ }
+}

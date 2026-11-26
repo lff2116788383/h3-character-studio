@@ -1,0 +1,105 @@
+{
+ "picked": "a1",
+ "garment_per_frame": [
+  {
+   "mask_px": 44165,
+   "iou0": 0.465,
+   "iou_best": 0.496,
+   "best_dx": 4,
+   "best_dy": 12
+  },
+  {
+   "mask_px": 41983,
+   "iou0": 0.439,
+   "iou_best": 0.466,
+   "best_dx": 0,
+   "best_dy": 12
+  },
+  {
+   "mask_px": 45891,
+   "iou0": 0.449,
+   "iou_best": 0.486,
+   "best_dx": -4,
+   "best_dy": 12
+  },
+  {
+   "mask_px": 44245,
+   "iou0": 0.457,
+   "iou_best": 0.491,
+   "best_dx": -6,
+   "best_dy": 12
+  },
+  {
+   "mask_px": 44716,
+   "iou0": 0.466,
+   "iou_best": 0.502,
+   "best_dx": 4,
+   "best_dy": 12
+  },
+  {
+   "mask_px": 40926,
+   "iou0": 0.442,
+   "iou_best": 0.476,
+   "best_dx": 2,
+   "best_dy": 12
+  },
+  {
+   "mask_px": 46533,
+   "iou0": 0.442,
+   "iou_best": 0.481,
+   "best_dx": -6,
+   "best_dy": 12
+  },
+  {
+   "mask_px": 42955,
+   "iou0": 0.466,
+   "iou_best": 0.501,
+   "best_dx": 0,
+   "best_dy": 12
+  }
+ ],
+ "composite_vs_outfitB": [
+  {
+   "sim_mad": 46.7,
+   "iou_vs_outfitB": 0.79
+  },
+  {
+   "sim_mad": 46.1,
+   "iou_vs_outfitB": 0.769
+  },
+  {
+   "sim_mad": 47.8,
+   "iou_vs_outfitB": 0.774
+  },
+  {
+   "sim_mad": 45.6,
+   "iou_vs_outfitB": 0.784
+  },
+  {
+   "sim_mad": 46.6,
+   "iou_vs_outfitB": 0.786
+  },
+  {
+   "sim_mad": 43.1,
+   "iou_vs_outfitB": 0.781
+  },
+  {
+   "sim_mad": 47.1,
+   "iou_vs_outfitB": 0.776
+  },
+  {
+   "sim_mad": 44.0,
+   "iou_vs_outfitB": 0.782
+  }
+ ],
+ "weapon_mask_px": [
+  6056,
+  5646,
+  5667,
+  5273,
+  4971,
+  5603,
+  6120,
+  6307
+ ]
+}

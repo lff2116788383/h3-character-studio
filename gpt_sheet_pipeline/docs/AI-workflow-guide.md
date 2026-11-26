@@ -1,0 +1,100 @@
+# AI 协作工作手册 — gpt_sheet_pipeline
+
+> 给新加入的 AI/开发者: 先读完本文档再动手, 可避免重走所有已验证的死路。
+> 最后更新: 2026-11-26 · 维护者: lff2116788383 + Doubao 协作会话
+
+## 1. 项目定位与边界（最重要）
+
+- 本仓库 `h3-character-studio` 是 fork 自 `winkidney/h3-character-studio`（upstream）的 H3 视频模型产线项目。
+- **`gpt_sheet_pipeline/` 是我们自己的独立补充方案**（GPT 生图替代 H3 做逐帧精灵），与 upstream 无关。
+- **所有改动只允许进 `gpt_sheet_pipeline/`**，不碰仓库其他任何文件——保证与 upstream 永不冲突。
+- `E:\work\hd2d-mmo\client` 是目标游戏客户端（Godot 4, HD-2D）。**验证阶段绝不修改客户端**；
+  所有渲染验证在本目录 `prototype/`（three.js）完成。
+- 传奇渲染结构参考本地 `E:\work\game\mir2x`（C++ 引擎，用户自己的项目）——分层/z 序表/逐帧偏移的祖师爷。
+
+## 2. 环境事实
+
+- Windows + **PowerShell 7**（Bash 不可用）；多行内容用 Write 工具写文件，别用 here-string 包装。
+- Python 3.13 + numpy / Pillow / opencv-python-headless / pyyaml / requests（已装）。
+- 生图 API: 密钥在 `gpt_sheet_pipeline/.secret-ui.env`（**绝不入库**），endpoint/model 见 `gpt_client.py`。
+  价格 ≈ **0.09 元/张，50s/张，无 seed（不可复现，靠抽卡）**。抽卡预算: 每资产 ×2 取优。
+- 本地服务: `cd prototype && python serve.py 8765` → http://127.0.0.1:8765/index.html（支持 URL 参数组合）。
+
+## 3. 资产产线（已跑通的路径）
+
+```
+母版 PNG(任一方向)
+  → gen_sheets.py      4×2 sheet (1024×1024, cell=256×512, 品红 #ff00ff 底)
+                       27帧 = 4张链式(母版+上一张), 末张带首尾闭合约束
+  → common.py          slice_sheet → matte_cell(品红抠底+despill) → fit_canvas(脚底 pivot 128,240)
+  → build_character.py 全方向共享 96 色板 → atlas(8列2px gutter) + animation.json + character.json
+                       (对齐 hd2d-mmo crescent-traveler 契约, 可直接拷进客户端)
+  → normals.py         解析法线+金属蒙版+四向受光 (与生成器解耦, 需人工 geometry.yaml 标注)
+```
+
+## 4. 关键约定（改代码前必读）
+
+| 约定 | 内容 |
+|---|---|
+| sheet 布局 | 恒定 4列×2行, 品红底, 无边框无文字无阴影; cell 内坐标 **y 向下** |
+| 锚点 schema | `anchors.json` 每帧 `wrist_r/elbow_r/ankle_a/ankle_b/head_top`, cell 内像素坐标 |
+| weaponOrder | mir2x 式逐帧表: **1=画在身体后面, 0=身前**; walk 全 0, attack=[0,0,1,1,0,0,0,0] |
+| 武器单图 | 竖直、刃朝上、握把=图片底部中心; 挂载=握把贴 wrist_r, 刀刃方向=肘→腕延长线 |
+| 单图部件挂点 | pivot=底部中心(斗笠等), 挂 head_top/wrist_r; three.js 里 geometry.translate(0,+h/2,0) |
+| 服装偏移校正 | 服装 sheet 对素体 sheet 的全局偏移用**头顶+脚线双基准取中位**; 别用质心(袍子质量会带偏 20px+) |
+| 攻击动作 | 空手画(刀后续挂载); 提示词让手臂"过顶→前伸→低收"的劈砍弧; 空手时模型易画成冲拳, 弧线可接受 |
+
+## 5. 实验方法论（每轮验证都这么干）
+
+1. **一个实验 = 一个可复跑的 py 脚本**（幂等: 已存在的生成物跳过），产物进 `output/<实验名>/`。
+2. 生成 ×2 抽卡，QC 指标自动选优: sheet 内相邻帧 IoU、循环闭合 IoU、光流中位、配准误差。
+3. **指标 + 目检双确认**: 任何结论必须有数字 + 截图（网格版图用于人工标注）。
+4. 浏览器验证用 URL 参数固定状态: `?motion=attack&weapon=1&cloth=B&hat=1&paused=1&frame=4&anchors=1`。
+   注意: 连续快速导航会触发浏览器 WebGL context 保护（白屏），等几秒重开即可，不是代码问题。
+5. 每个否定结论也要留证据（见死路清单），防止后续会话重走。
+
+## 6. 已验证结论（数字为准）
+
+| 结论 | 指标 |
+|---|---|
+| sheet 方案 vs 逐帧独立 | 相邻 IoU 0.80~0.85 vs 0.739; 质心漂移 ±2px vs 40px |
+| 锚点引导整套生成(衣服含身体) | 合成 IoU **0.94~0.96** |
+| 武器单图+锚点旋转挂载 | 构造上零漂移; 浏览器实测 walk/attack 全帧跟手 |
+| weaponOrder z 序切换 | 原型实测起手帧刀在身后(1)、劈下在身前(0) |
+| 素体身份锚点 | 脱衣后脸/辫子/头饰保持, QC 0.85+; 配准光流中位 0.87~2.23px |
+| 三轮否决: 空心大件分层 | 无形人台 0.795 / 空心+锚点 0.78 — **GPT 画不准没有身体的衣服** |
+| 混合分层资源账 | 10衣×10武×3发型=600搭配 → 23 件资源 ≈15 元 vs 预生成 840 元/1.9GB |
+
+## 7. 死路清单（不要再试）
+
+1. 逐帧独立生成（漂移 40px）与链式逐帧参考（IoU 0.710 + 传话游戏退化）
+2. GPT 直接画法线（不可验证）; 法线走 `normals.py` 确定性解析
+3. 空心/无形人台大件部件（两轮封顶 0.78, 动幅弱）
+4. diff 提取服装层（边缘污染 73%）→ 已被"武器单图+锚点"和"整套锚点引导"取代
+5. 质心做 sheet 对齐基准（被袍子质量带偏）; 用头脚双基准
+6. H3 本机跑（Windows+RTX3070 不满足 Linux/CUDA13）; H3 产线走云端 `--url`
+
+## 8. 方案文档与原型
+
+- 换装系统完整方案（架构/资源账/落地步骤）: `docs/hd2d-equipment-swap-plan.md`
+- three.js 原型: `prototype/index.html` + `prototype_data.json`（由 `build_prototype_assets.py` 生成）
+- 运行: `cd prototype && python serve.py 8765`
+- 已实测组合: walk+刀(挂载✓), attack起手+绿袍(z序身后✓), attack劈下+绿袍+斗笠(挂载✓,斗笠锚点 y 待微调)
+- 产物截图: 会话记录; 组合自查用 URL 参数
+
+## 9. Git 红线
+
+- 只 add `gpt_sheet_pipeline/`; 提交前 `git status` 确认 **`.secret-ui.env` 不在暂存区**。
+- `output/`（测试资产, ≈40MB）与 `prototype/assets/` 均入库——这是抽卡花真金白银的产物。
+- 单文件 >100MB 禁止（GitHub 硬限）; 当前最大单文件 ≈2MB, 安全。
+- 提交信息: `feat(gpt_sheet_pipeline): <内容>` 英文正文, 与仓库既有风格一致。
+
+## 10. 当前待办（接手从这里开始）
+
+1. **斗笠 head_top 复验**: 锚点已从 y=70 修正为 y=100（`output/attack/anchors_attack.json` 与
+   `build_prototype_assets.py` 的 WALK_HEAD_TOP 已改, `prototype_data.json` 已重建），
+   但**未浏览器复验**——若仍浮空, 微调 `mountInsetUp`（hat pivot 上下偏移）。
+2. 四方向扩展: 当前全部只有 right 向; 量产需 ×4 方向（账: 每套服装 4 动作 ×4 向 ≈ 64 sheet）。
+3. 素体赤足化: 攻击帧素体布鞋从袍下露出（body 与 cloth 脚部姿势差）, 素体宜赤足/最小鞋。
+4. 服装A/B 的 walk 服装对素体偏移 1~2px, attack 0~2px — 已在 clothOffset 校正, 无需再调。
+5. 客户端接入（另行立项, 需用户拍板才可动 hd2d-mmo）: 衣服 clips 切换 + 小件锚点 Sprite3D。

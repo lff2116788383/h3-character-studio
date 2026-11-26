@@ -1,0 +1,108 @@
+{
+ "body_vs_A": [
+  {
+   "flow_med_px": 1.14,
+   "feet_dy": 0,
+   "cx_dx": 0.6
+  },
+  {
+   "flow_med_px": 1.22,
+   "feet_dy": 0,
+   "cx_dx": -0.8
+  },
+  {
+   "flow_med_px": 1.25,
+   "feet_dy": 0,
+   "cx_dx": 0.4
+  },
+  {
+   "flow_med_px": 1.15,
+   "feet_dy": 0,
+   "cx_dx": -0.6
+  },
+  {
+   "flow_med_px": 0.87,
+   "feet_dy": 0,
+   "cx_dx": 0.2
+  },
+  {
+   "flow_med_px": 1.08,
+   "feet_dy": 0,
+   "cx_dx": -0.3
+  },
+  {
+   "flow_med_px": 1.69,
+   "feet_dy": 0,
+   "cx_dx": 0.9
+  },
+  {
+   "flow_med_px": 0.98,
+   "feet_dy": 0,
+   "cx_dx": 0.1
+  }
+ ],
+ "body_vs_B": [
+  {
+   "flow_med_px": 1.54,
+   "feet_dy": 0,
+   "cx_dx": 0.3
+  },
+  {
+   "flow_med_px": 1.27,
+   "feet_dy": 0,
+   "cx_dx": 0.9
+  },
+  {
+   "flow_med_px": 1.61,
+   "feet_dy": 0,
+   "cx_dx": -0.2
+  },
+  {
+   "flow_med_px": 1.47,
+   "feet_dy": 0,
+   "cx_dx": 0.7
+  },
+  {
+   "flow_med_px": 1.31,
+   "feet_dy": 0,
+   "cx_dx": -0.0
+  },
+  {
+   "flow_med_px": 1.59,
+   "feet_dy": 0,
+   "cx_dx": 1.3
+  },
+  {
+   "flow_med_px": 2.23,
+   "feet_dy": 0,
+   "cx_dx": 1.0
+  },
+  {
+   "flow_med_px": 1.34,
+   "feet_dy": 0,
+   "cx_dx": 0.1
+  }
+ ],
+ "layer_B_f0": {
+  "mask_px": 8938,
+  "edge_contamination": 0.732
+ },
+ "layer_B_f4": {
+  "mask_px": 8949,
+  "edge_contamination": 0.734
+ },
+ "qc": {
+  "body": {
+   "adjacent_mean": 0.817,
+   "loop": 0.855
+  },
+  "outfitA": {
+   "adjacent_mean": 0.837,
+   "loop": 0.886
+  },
+  "outfitB": {
+   "adjacent_mean": 0.853,
+   "loop": 0.916
+  }
+ }
+}
