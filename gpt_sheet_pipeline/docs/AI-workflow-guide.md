@@ -82,6 +82,8 @@
 
 - 换装系统完整方案（架构/资源账/落地步骤）: `docs/hd2d-equipment-swap-plan.md`
 - three.js 原型: `prototype/index.html` + `prototype_data.json`（由 `build_prototype_assets.py` 生成）
+- **纸娃娃绑定导出工具**: `prototype/tool.html`（资产库筛选/拖拽绑定/单帧微调/客户端 ZIP 导出），
+  用法与实测见 `docs/paperdoll-tool.md`；`index.html?edit=1` 为其轻量锚点校准前身。
 - 运行: `cd prototype && python serve.py 8765`
 - 已实测组合: walk+刀(挂载✓), attack起手+绿袍(z序身后✓), attack劈下+绿袍+斗笠(挂载✓)
 - 斗笠挂载复验（2026-11-26, 两轮）:
@@ -124,4 +126,6 @@
    只含与脚本标定不同的锚点; 2026-11-26 全链路已验证: 微调/拖拽/刷新暂存/导出/重置）。
    待办: 让 `build_prototype_assets.py`（及量产构建脚本）**优先读取** `output/anchors_manual.json`
    覆盖脚本标定, 形成人工标定进管线的正式入口; 导入后 §7.7 的逐帧人工标定即成为量产标准流程。
+9. ~~纸娃娃工具一期~~ ✅ 2026-11-26: `prototype/tool.html`（文档 `docs/paperdoll-tool.md`）。
+   二期: 3D 场景缩放演示（billboard/透视相机, 法线受光再议）; 另: bindings.json 回灌产线、多方向批量。
 
