@@ -67,6 +67,7 @@
     </div>
     <input id="q" type="text" placeholder="搜索名称 / 标签，如：斗笠">
     <div class="chips" id="slot-chips"></div>
+    <div class="chips" id="series-chips"></div>
     <div class="row">
       <label><input id="bound-only" type="checkbox" style="width:auto"> 只看已绑定</label>
     </div>
@@ -99,6 +100,7 @@
           </select>
         </div>
         <div class="row"><label>标签</label><input id="a-tags" type="text" placeholder="逗号分隔"></div>
+        <div class="row"><label>系列</label><input id="a-series" type="text" placeholder="如 clean / jade / 通用"></div>
         <div class="row"><label>序列列数</label><input id="a-cols" type="number" min="1" value="1">
           <label>帧数</label><input id="a-frames" type="number" min="1" value="1"></div>
         <div class="row">
@@ -116,7 +118,7 @@
           X<input id="b-dx" type="number" value="0"> Y<input id="b-dy" type="number" value="0"></div>
         <div class="row"><label>缩放</label><input id="b-scale" type="number" step="0.01" value="1">
           <label id="b-rot-lab">角度°</label><input id="b-rot" type="number" step="1" value="0"></div>
-        <div class="row" id="b-auto-row"><label><input id="b-auto" type="checkbox" style="width:auto"> 武器朝向跟随肘→腕</label></div>
+        <div class="row" id="b-auto-row"><label><input id="b-auto" type="checkbox" style="width:auto"> 武器朝向跟随肘→腕（需先校准锚点）</label></div>
         <div class="row" id="b-inset-row"><label>挂点(距底%)</label><input id="b-inset" type="number" step="1" value="4"></div>
         <div class="row" id="b-cloth-row">
           <button id="b-cloth-all" title="把当前动作的衣服应用到 walk+attack 全部动作">应用到全部动作</button>
@@ -127,6 +129,7 @@
           <button id="b-clearallfix">清除全部修正</button>
           <button id="b-unbind">解绑</button>
         </div>
+        <div class="note" id="b-warn" style="color:#e2b13c;display:none"></div>
         <div class="note">暂停后在画布拖动装备 = 只修当前帧；全局偏移在上方改。</div>
       </div>
     </div>
@@ -189,7 +192,8 @@
    参考：RPG Maker 生成器布局 / PixelDoll(MIT) 分层同 pivot 与 zip 思想 / TDSM 尺寸导出面板。
    客户端契约与 gpt_sheet_pipeline/build_character.py 对齐。 */
 const $ = id => document.getElementById(id);
-const SLOT_NAMES = {body:'素体', cloth:'衣服', headwear:'头盔', weapon:'武器', other:'其他'};
+const SLOT_NAMES = {body:'素体', hair:'发型', cloth:'衣服', headwear:'头盔', weapon:'武器', other:'其他'};
+const LAYER_SLOTS = ['hair','cloth'];   // RPG Maker 式整格逐帧对齐图层槽
 const HOT_COLORS = {head_top:'#40ff60', wrist_r:'#ff5050', elbow_r:'#5080ff'};
 const uid = () => 'a' + Math.random().toString(36).slice(2, 9);
 
@@ -197,11 +201,11 @@ const S = {
   direction:'right', motion:'walk', frame:0, playing:false, zoom:1.4,
   showHot:false, hotKey:'head_top',
   selAsset:null, selSlot:null,
-  filter:{slot:'all', q:'', boundOnly:false},
+  filter:{slot:'all', series:'all', q:'', boundOnly:false},
   dirs:{},   // 方向 -> {motions:{walk/attack...}, bindings:{cloth,headwear,weapon}}
 };
 const DIRS=['right','left','up','down'];
-const defaultBindings=()=>({cloth:null,headwear:null,weapon:null});
+const defaultBindings=()=>({hair:null,cloth:null,headwear:null,weapon:null});
 const emptyDir=()=>({motions:{walk:null,attack:null},bindings:defaultBindings()});
 let assets = new Map();        // id -> {id,name,slot,tags,cols,frames,w,h,builtin,blob,img}
 let builtinData = null;
@@ -211,6 +215,11 @@ let dragState = null;
 function toast(msg, ms=2200){ const t=$('toast'); t.textContent=msg; t.style.display='block';
   clearTimeout(t._tm); t._tm=setTimeout(()=>t.style.display='none',ms); }
 function slotDefaultHot(slot){ return slot==='headwear'?'head_top':'wrist_r'; }
+function anchorCalib(motion,key){
+  // 已人工校准的锚点；其余为脚本估算——绑武器前应先在热区编辑里校准
+  if(S.direction==='right'&&key==='head_top') return 'manual';
+  return 'estimate';
+}
 function curDir(){ return S.dirs[S.direction]; }
 function curMotion(){ const D=curDir(); return D?D.motions[S.motion]:null; }
 function assetCell(a){ const rows=Math.max(1,Math.ceil(a.frames/a.cols));
@@ -218,11 +227,10 @@ function assetCell(a){ const rows=Math.max(1,Math.ceil(a.frames/a.cols));
 function offOf(b,f){ const fix=b.fix&&b.fix[f]; return fix?{dx:b.dx+fix.dx,dy:b.dy+fix.dy}:{dx:b.dx,dy:b.dy}; }
 function newBinding(assetId, slot){
   const b={assetId,dx:0,dy:0,scale:1,rot:0,fix:{}};
-  if(slot==='weapon'){ b.auto=true; }
-  if(slot==='headwear'){ b.inset=0.04; }
+  if(slot==='headwear'){ b.inset=0.04; }   // 武器默认固定角度，auto 跟随需手动开
   const a=assets.get(assetId);
   if(a&&a.preset) Object.assign(b,a.preset);
-  if(slot==='cloth') b.byMotion={[S.motion]:assetId};
+  if(LAYER_SLOTS.includes(slot)) b.byMotion={[S.motion]:assetId};
   return b;
 }
 
@@ -236,12 +244,16 @@ async function registerBuiltin(id,name,slot,path,extra={}){
 async function initBuiltins(){
   builtinData=await (await fetch('./prototype_data.json')).json();
   const d=builtinData;
-  await registerBuiltin('b_body_walk','素体 walk','body',d.motions.walk.body,{cols:4,frames:8});
-  await registerBuiltin('b_body_attack','素体 attack','body',d.motions.attack.body,{cols:4,frames:8});
+  await registerBuiltin('b_clean_walk','干净裸模 walk','body','assets/clean_body_walk.png',{cols:4,frames:8,series:'clean'});
+  await registerBuiltin('b_clean_attack','干净裸模 attack','body','assets/clean_body_attack.png',{cols:4,frames:8,series:'clean'});
+  await registerBuiltin('b_hair_walk','发型A walk','hair','assets/hair_clean_walk.png',{cols:4,frames:8,series:'clean'});
+  await registerBuiltin('b_hair_attack','发型A attack','hair','assets/hair_clean_attack.png',{cols:4,frames:8,series:'clean'});
+  await registerBuiltin('b_body_walk','素体 walk','body',d.motions.walk.body,{cols:4,frames:8,series:'jade'});
+  await registerBuiltin('b_body_attack','素体 attack','body',d.motions.attack.body,{cols:4,frames:8,series:'jade'});
   for(const m of ['walk','attack']) for(const c of ['A','B'])
-    await registerBuiltin(`b_cloth${c}_${m}`,`服装${c} ${m}`,'cloth',d.motions[m].cloth[c],{cols:4,frames:8});
-  await registerBuiltin('b_hat','斗笠','headwear',d.headwear.hat.path,{preset:{scale:120/d.headwear.hat.size[1],inset:d.headwear.hat.mountInsetUp}});
-  await registerBuiltin('b_weapon','直刀','weapon',d.weapon.path,{preset:{scale:d.weapon.length/d.weapon.size[1]}});
+    await registerBuiltin(`b_cloth${c}_${m}`,`服装${c} ${m}`,'cloth',d.motions[m].cloth[c],{cols:4,frames:8,series:'jade'});
+  await registerBuiltin('b_hat','斗笠','headwear',d.headwear.hat.path,{preset:{scale:120/d.headwear.hat.size[1],inset:d.headwear.hat.mountInsetUp},series:'通用'});
+  await registerBuiltin('b_weapon','直刀','weapon',d.weapon.path,{preset:{scale:d.weapon.length/d.weapon.size[1]},series:'通用'});
   for(const d of DIRS) S.dirs[d]=emptyDir();
   for(const m of ['walk','attack']){
     const M=d.motions[m];
@@ -282,9 +294,9 @@ function restoreDirsInto(dirs){
       const M=D.motions[m];
       if(M&&assets.has(M.assetId)) S.dirs[d].motions[m]=M;
     }
-    for(const s of ['cloth','headwear','weapon']){
+    for(const s of ['hair','cloth','headwear','weapon']){
       const b=D.bindings&&D.bindings[s]; if(!b) continue;
-      const ids=s==='cloth'?Object.values(b.byMotion||{}):[b.assetId];
+      const ids=LAYER_SLOTS.includes(s)?Object.values(b.byMotion||{}):[b.assetId];
       if(ids.every(id=>!id||assets.has(id))) S.dirs[d].bindings[s]=b;
     }
   }
@@ -302,7 +314,8 @@ async function restoreProject(){
   const recs=await idbAll('assets');
   for(const r of recs){
     try{ const bmp=await createImageBitmap(r.blob);
-      assets.set(r.id,{id:r.id,name:r.name,slot:r.slot,tags:r.tags,cols:r.cols,frames:r.frames,
+      assets.set(r.id,{id:r.id,name:r.name,slot:r.slot,tags:r.tags,series:r.series||'',
+        cols:r.cols,frames:r.frames,
         w:bmp.width,h:bmp.height,img:bmp,blob:r.blob,builtin:false});
     }catch(e){}
   }
@@ -310,9 +323,10 @@ async function restoreProject(){
 }
 
 // ---------- 资产库 ----------
-const FILTERS=[['all','全部'],['body','素体'],['cloth','衣服'],['headwear','头盔'],['weapon','武器'],['other','其他']];
+const FILTERS=[['all','全部'],['body','素体'],['hair','发型'],['cloth','衣服'],['headwear','头盔'],['weapon','武器'],['other','其他']];
 function guessSlot(name){
   const s=name.toLowerCase();
+  if(/hair|发型|头发|刘海/.test(s)) return 'hair';
   if(/hat|helmet|斗笠|盔|帽/.test(s)) return 'headwear';
   if(/sword|knife|blade|weapon|刀|剑|武器/.test(s)) return 'weapon';
   if(/cloth|robe|dress|服|衣/.test(s)) return 'cloth';
@@ -322,7 +336,7 @@ function guessSlot(name){
 function isBound(id){
   const B=curDir().bindings;
   for(const s of ['headwear','weapon']){ const b=B[s]; if(b&&b.assetId===id) return true; }
-  const c=B.cloth; if(c&&c.byMotion&&Object.values(c.byMotion).includes(id)) return true;
+  for(const s of LAYER_SLOTS){ const c=B[s]; if(c&&c.byMotion&&Object.values(c.byMotion).includes(id)) return true; }
   const MS=curDir().motions;
   for(const m in MS) if(MS[m]&&MS[m].assetId===id) return true;
   return false;
@@ -334,12 +348,12 @@ function clothBase(name){
   return s.replace(/[\s_-]+/g,'');
 }
 function autoGroupCloth(aid, curMotion){
-  const a=assets.get(aid); if(!a||a.slot!=='cloth') return {};
+  const a=assets.get(aid); if(!a||!LAYER_SLOTS.includes(a.slot)) return {};
   const out={};
   for(const m in curDir().motions){
     if(m===curMotion) continue;
     for(const b of assets.values()){
-      if(b.slot!=='cloth'||b.id===aid) continue;
+      if(!LAYER_SLOTS.includes(b.slot)||b.id===aid) continue;
       if(b.name.toLowerCase().includes(m)&&clothBase(b.name)===clothBase(a.name)){ out[m]=b.id; break; }
     }
   }
@@ -352,10 +366,18 @@ function renderLib(){
     if(S.filter.slot===v) b.classList.add('on');
     b.onclick=()=>{S.filter.slot=v;renderLib();}; chips.appendChild(b);
   }
+  const scbox=$('series-chips'); scbox.innerHTML='';
+  const seriesList=['all',...new Set([...assets.values()].map(a=>a.series||'通用'))];
+  for(const v of seriesList){
+    const b=document.createElement('button'); b.textContent=v==='all'?'全系':v;
+    if((S.filter.series||'all')===v) b.classList.add('on');
+    b.onclick=()=>{S.filter.series=v;renderLib();}; scbox.appendChild(b);
+  }
   const box=$('cards'); box.innerHTML='';
   const q=S.filter.q.trim().toLowerCase();
   for(const a of assets.values()){
     if(S.filter.slot!=='all'&&a.slot!==S.filter.slot) continue;
+    if((S.filter.series||'all')!=='all'&&(a.series||'通用')!==S.filter.series) continue;
     if(q&&!(a.name.toLowerCase().includes(q)||(a.tags||'').toLowerCase().includes(q))) continue;
     if(S.filter.boundOnly&&!isBound(a.id)) continue;
     const card=document.createElement('div'); card.className='card'+(S.selAsset===a.id?' sel':'');
@@ -381,7 +403,7 @@ function renderAssetPanel(){
   $('asset-info').style.display=a?'none':'';
   if(!a) return;
   $('a-name').value=a.name; $('a-slot').value=a.slot; $('a-tags').value=a.tags||'';
-  $('a-cols').value=a.cols; $('a-frames').value=a.frames;
+  $('a-series').value=a.series||''; $('a-cols').value=a.cols; $('a-frames').value=a.frames;
 }
 $('imp').onclick=()=>$('file').click();
 $('file').onchange=async ev=>{
@@ -390,7 +412,7 @@ $('file').onchange=async ev=>{
       const bmp=await createImageBitmap(f);
       const id=uid();
       const rec={id,name:f.name.replace(/\.(png|webp)$/i,''),slot:guessSlot(f.name),tags:'',
-        cols:1,frames:1,blob:f};
+        series:'通用',cols:1,frames:1,blob:f};
       assets.set(id,{...rec,w:bmp.width,h:bmp.height,img:bmp,builtin:false});
       if(db) await idbPut('assets',rec);
       S.selAsset=id;
@@ -402,10 +424,11 @@ $('q').oninput=e=>{S.filter.q=e.target.value;renderLib();};
 $('bound-only').onchange=e=>{S.filter.boundOnly=e.target.checked;renderLib();};
 for(const [id,fn] of [
   ['a-name',(a,v)=>a.name=v],['a-slot',(a,v)=>a.slot=v],['a-tags',(a,v)=>a.tags=v],
+  ['a-series',(a,v)=>a.series=v.trim()],
   ['a-cols',(a,v)=>a.cols=Math.max(1,+v||1)],['a-frames',(a,v)=>a.frames=Math.max(1,+v||1)]]){
   $(id).onchange=e=>{const a=assets.get(S.selAsset); if(!a)return;
     fn(a,e.target.value); if(db&&!a.builtin) idbPut('assets',{id:a.id,name:a.name,slot:a.slot,tags:a.tags,
-      cols:a.cols,frames:a.frames,blob:a.blob});
+      series:a.series||'',cols:a.cols,frames:a.frames,blob:a.blob});
     renderLib();};
 }
 $('a-del').onclick=()=>{const a=assets.get(S.selAsset); if(!a)return;
@@ -462,16 +485,18 @@ function drawFrame(c2,motion,f,dir){
   const [bw,bh]=assetCell(body);
   c2.drawImage(body.img,col*bw,row*bh,bw,bh,0,0,bw,bh);
   const A=M.anchors[Math.min(f,M.anchors.length-1)]||{};
-  // 衣服（整格，含全局偏移）
-  const cb=B.cloth;
-  if(cb&&cb.byMotion&&cb.byMotion[motion]){
-    const ca=assets.get(cb.byMotion[motion]);
-    if(ca){ const [aw,ah]=assetCell(ca); const cc=f%ca.cols,cr=Math.floor(f/ca.cols);
-      c2.drawImage(ca.img,cc*aw,cr*ah,aw,ah,cb.dx,cb.dy,aw,ah); }
-  }
+  // 整格图层：衣服 → 发型（发型叠在衣服上，贴近原角色辫子压袍的层次）
+  drawLayer(c2,'cloth',motion,f,B);
+  drawLayer(c2,'hair',motion,f,B);
   // 武器（旋转挂载）与头饰
   drawItem(c2,'weapon',A,f,B);
   drawItem(c2,'headwear',A,f,B);
+}
+function drawLayer(c2,slot,motion,f,B){
+  const b=B[slot]; if(!b)return;
+  const a=assets.get(b.byMotion&&b.byMotion[motion]); if(!a)return;
+  const [aw,ah]=assetCell(a); const cc=f%a.cols,cr=Math.floor(f/a.cols);
+  c2.drawImage(a.img,cc*aw,cr*ah,aw,ah,b.dx||0,b.dy||0,aw,ah);
 }
 function drawItem(c2,slot,A,f,B){
   const b=B[slot]; if(!b)return;
@@ -520,12 +545,12 @@ cv.addEventListener('drop',ev=>{
   const aid=ev.dataTransfer.getData('text/aid'); const a=assets.get(aid); if(!a)return;
   const pos=evCell(ev);
   if(a.slot==='body'){ S.selAsset=aid; $('a-setbody').click(); return; }
-  if(!['headwear','weapon','cloth'].includes(a.slot)){ toast('请先在右侧把资产类型设为 头盔/武器/衣服'); S.selAsset=aid; renderAssetPanel(); return; }
+  if(!['hair','headwear','weapon','cloth'].includes(a.slot)){ toast('请先在右侧把资产类型设为 发型/头盔/武器/衣服'); S.selAsset=aid; renderAssetPanel(); return; }
   const M=curMotion(); const A=M.anchors[Math.min(S.frame,M.anchors.length-1)]||{};
   const b=newBinding(aid,a.slot);
   curDir().bindings[a.slot]=b; S.selSlot=a.slot;
   let extra='';
-  if(a.slot==='cloth'){
+  if(LAYER_SLOTS.includes(a.slot)){
     const group=autoGroupCloth(aid,S.motion);
     for(const m in group) b.byMotion[m]=group[m];
     const ms=Object.keys(b.byMotion);
@@ -533,6 +558,8 @@ cv.addEventListener('drop',ev=>{
   }else{
     const hot=A[slotDefaultHot(a.slot)]||[pos[0],pos[1]];
     b.dx=Math.round(pos[0]-hot[0]); b.dy=Math.round(pos[1]-hot[1]);
+    if(a.slot==='weapon'&&anchorCalib(S.motion,'wrist_r')!=='manual')
+      extra=' · ⚠腕/肘锚点未人工校准，动画可能漂移，请先热区校准';
   }
   S.playing=true; $('play').textContent='⏸ 暂停';
   renderSlots(); saveProject();
@@ -566,14 +593,14 @@ cv.addEventListener('pointerup',()=>{ if(dragState&&dragState.kind==='item')toas
 // ---------- 槽位面板 ----------
 function renderSlots(){
   const box=$('slots'); box.innerHTML=''; const B=curDir().bindings;
-  for(const slot of ['cloth','headwear','weapon']){
+  for(const slot of ['hair','cloth','headwear','weapon']){
     const b=B[slot];
     const row=document.createElement('div'); row.className='row';
     const btn=document.createElement('button'); btn.textContent=SLOT_NAMES[slot]+'槽';
     if(S.selSlot===slot)btn.classList.add('on');
     btn.onclick=()=>{S.selSlot=slot;renderSlots();};
     const lab=document.createElement('span'); lab.style.flex='1';
-    if(slot==='cloth'){
+    if(LAYER_SLOTS.includes(slot)){
       const aid=b&&b.byMotion&&b.byMotion[S.motion];
       const ms=b&&b.byMotion?Object.keys(b.byMotion).filter(m=>b.byMotion[m]):[];
       const nm=aid&&assets.get(aid)?assets.get(aid).name:'未绑定';
@@ -587,12 +614,17 @@ function renderSlots(){
   $('b-dx').value=b.dx; $('b-dy').value=b.dy; $('b-scale').value=b.scale;
   $('b-rot').value=b.rot||0;
   $('b-auto-row').style.display=S.selSlot==='weapon'?'':'none';
-  $('b-cloth-row').style.display=S.selSlot==='cloth'?'':'none';
-  $('b-rot-lab').style.display=S.selSlot==='cloth'?'none':'';
-  $('b-rot').style.display=S.selSlot==='cloth'?'none':'';
+  $('b-cloth-row').style.display=LAYER_SLOTS.includes(S.selSlot)?'':'none';
+  $('b-rot-lab').style.display=LAYER_SLOTS.includes(S.selSlot)?'none':'';
+  $('b-rot').style.display=LAYER_SLOTS.includes(S.selSlot)?'none':'';
   $('b-inset-row').style.display=S.selSlot==='headwear'?'':'none';
   if(S.selSlot==='weapon')$('b-auto').checked=!!b.auto;
   if(S.selSlot==='headwear')$('b-inset').value=Math.round((b.inset??0.04)*100);
+  const warn=$('b-warn');
+  if(S.selSlot==='weapon'&&anchorCalib(S.motion,'wrist_r')!=='manual'){
+    warn.textContent='⚠ 腕/肘锚点为脚本估算未人工校准，播放时武器会漂移/乱甩；请开启热区编辑逐帧校准后再绑武器。';
+    warn.style.display='';
+  }else warn.style.display='none';
 }
 for(const [id,fn] of [
   ['b-dx',(b,v)=>b.dx=+v||0],['b-dy',(b,v)=>b.dy=+v||0],
@@ -601,14 +633,14 @@ for(const [id,fn] of [
   $(id).oninput=e=>{const b=curDir().bindings[S.selSlot]; if(!b)return; fn(b,e.target.value); saveProject();};
 }
 $('b-auto').onchange=e=>{const b=curDir().bindings.weapon; if(b){b.auto=e.target.checked;saveProject();}};
-$('b-cloth-all').onclick=()=>{const b=curDir().bindings.cloth; if(!b)return;
-  const aid=b.byMotion&&b.byMotion[S.motion]; if(!aid){toast('当前动作没有衣服绑定');return;}
+$('b-cloth-all').onclick=()=>{const b=curDir().bindings[S.selSlot]; if(!b)return;
+  const aid=b.byMotion&&b.byMotion[S.motion]; if(!aid){toast('当前动作没有绑定');return;}
   for(const m in curDir().motions) b.byMotion[m]=aid;
-  renderSlots(); saveProject(); toast('衣服已应用到全部动作');};
-$('b-cloth-only').onclick=()=>{const b=curDir().bindings.cloth; if(!b||!b.byMotion)return;
-  if(!b.byMotion[S.motion]){toast('当前动作没有衣服绑定');return;}
+  renderSlots(); saveProject(); toast(SLOT_NAMES[S.selSlot]+'已应用到全部动作');};
+$('b-cloth-only').onclick=()=>{const b=curDir().bindings[S.selSlot]; if(!b||!b.byMotion)return;
+  if(!b.byMotion[S.motion]){toast('当前动作没有绑定');return;}
   b.byMotion={[S.motion]:b.byMotion[S.motion]};
-  renderSlots(); saveProject(); toast('衣服只保留 '+S.motion);};
+  renderSlots(); saveProject(); toast(SLOT_NAMES[S.selSlot]+'只保留 '+S.motion);};
 $('b-clearfix').onclick=()=>{const b=curDir().bindings[S.selSlot]; if(b&&b.fix){delete b.fix[S.frame];saveProject();}};
 $('b-clearallfix').onclick=()=>{const b=curDir().bindings[S.selSlot]; if(b){b.fix={};saveProject();}};
 $('b-unbind').onclick=()=>{ if(S.selSlot)curDir().bindings[S.selSlot]=null; renderSlots(); saveProject(); };
@@ -794,7 +826,7 @@ async function saveProjectZip(){
       if(a.builtin||!a.blob) continue;
       const fname=`assets/${a.id}.png`;
       files[fname]=await a.blob.arrayBuffer();
-      assetList.push({id:a.id,name:a.name,slot:a.slot,tags:a.tags||'',
+      assetList.push({id:a.id,name:a.name,slot:a.slot,tags:a.tags||'',series:a.series||'通用',
         cols:a.cols,frames:a.frames,w:a.w,h:a.h,file:fname});
     }
     const project={schema:'paperdoll-project-v2',version:2,saved:new Date().toISOString(),
@@ -852,7 +884,7 @@ async function openProjectZip(file){
     const data=files.get(meta.file); if(!data||assets.has(meta.id)) continue;
     const blob=new Blob([data],{type:'image/png'});
     const bmp=await createImageBitmap(blob);
-    const rec={id:meta.id,name:meta.name,slot:meta.slot,tags:meta.tags||'',
+    const rec={id:meta.id,name:meta.name,slot:meta.slot,tags:meta.tags||'',series:meta.series||'通用',
       cols:meta.cols,frames:meta.frames,blob};
     assets.set(meta.id,{...rec,w:bmp.width,h:bmp.height,img:bmp,builtin:false});
     if(db) await idbPut('assets',rec);
