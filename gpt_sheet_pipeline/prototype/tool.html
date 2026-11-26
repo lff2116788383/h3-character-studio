@@ -42,6 +42,10 @@
   #hud{position:absolute;left:10px;top:8px;font-size:11px;color:#bbb;background:#0008;padding:4px 8px;border-radius:4px;pointer-events:none;white-space:pre-line}
   #toast{position:fixed;left:50%;bottom:64px;transform:translateX(-50%);background:#000c;color:#ffe1a0;
     padding:6px 14px;border-radius:6px;font-size:12px;display:none;z-index:9}
+  #p3d{position:absolute;right:12px;top:12px;width:380px;height:460px;background:#191920;border:1px solid #4a4a58;
+    border-radius:8px;display:none;overflow:hidden;z-index:5;box-shadow:0 4px 24px #0008}
+  #p3d .bar{display:flex;gap:6px;align-items:center;padding:5px 8px;background:#23232c;font-size:11px;color:#bbb}
+  #p3d canvas{display:block;width:100%;height:420px;touch-action:none;cursor:grab}
   table.kv{width:100%;border-collapse:collapse}
   table.kv td{padding:2px 0;font-size:12px}
   table.kv td:first-child{color:var(--dim);width:88px}
@@ -73,6 +77,12 @@
   <div id="stage">
     <canvas id="cv"></canvas>
     <div id="hud"></div>
+    <div id="p3d">
+      <div class="bar"><span>3D 演示 · 滚轮缩放 / 拖动转视角</span><span style="flex:1"></span>
+        <label><input id="p3-bill" type="checkbox" checked style="width:auto">面向相机</label>
+        <button id="p3-reset">复位</button><button id="p3-close">×</button></div>
+      <canvas id="p3-cv"></canvas>
+    </div>
   </div>
 
   <div class="col" id="props">
@@ -155,6 +165,7 @@
   <span id="f-lab" class="dim">0/8</span>
   <span style="flex:1"></span>
   <span>缩放</span><button id="z-out">−</button><span id="z-lab">140%</span><button id="z-in">＋</button>
+  <button id="t3d">3D 演示</button>
   <button id="exp" class="primary">导出客户端 ZIP</button>
 </div>
 </div>
@@ -235,8 +246,9 @@ function idbAll(store){ return new Promise((res,rej)=>{ const r=db.transaction(s
   r.onsuccess=()=>res(r.result||[]); r.onerror=()=>rej(r.error); }); }
 function idbDel(store,key){ return new Promise((res)=>{ const tx=db.transaction(store,'readwrite');
   tx.objectStore(store).delete(key); tx.oncomplete=res; }); }
-let saveTm=null;
+let saveTm=null, compositeRev=0;
 function saveProject(){
+  compositeRev++;
   clearTimeout(saveTm);
   saveTm=setTimeout(()=>{
     if(!db) return;
@@ -570,6 +582,7 @@ function tick(now){
   ctx.restore();
   $('hud').textContent=`${S.motion} #${S.frame} · 源cell ${cellSize().join('×')}`+
     (S.selSlot?` · 选中${SLOT_NAMES[S.selSlot]}槽`:'')+(S.playing?'':' · 已暂停(可拖装备修帧)');
+  if(P3&&$('p3d').style.display!=='none') P3.update();
   requestAnimationFrame(tick);
 }
 let lastCW=0,lastCH=0;
@@ -709,6 +722,84 @@ function zipStore(files){
   end.setUint32(0,0x06054b50,true); end.setUint16(8,count,true); end.setUint16(10,count,true);
   end.setUint32(12,cdSize,true); end.setUint32(16,offset,true);
   return new Blob([...parts,...central,end.buffer],{type:'application/zip'});
+}
+
+// ---------- 3D 演示（二期，three.js 懒加载） ----------
+let P3=null;
+$('t3d').onclick=async()=>{
+  const show=$('p3d').style.display==='none';
+  $('p3d').style.display=show?'block':'none';
+  $('t3d').classList.toggle('on',show);
+  if(show){ try{ await ensure3D(); }catch(e){ console.error(e); toast('3D 初始化失败: '+e.message,4000); } }
+};
+$('p3-close').onclick=()=>{ $('p3d').style.display='none'; $('t3d').classList.remove('on'); };
+async function ensure3D(){
+  if(P3) return P3;
+  const THREE=await import('./vendor/three.module.js');
+  const c=$('p3-cv'); c.width=380; c.height=420;
+  const renderer=new THREE.WebGLRenderer({canvas:c,antialias:false});
+  renderer.setPixelRatio(1);
+  const scene=new THREE.Scene(); scene.background=new THREE.Color(0x202028);
+  const camera=new THREE.PerspectiveCamera(35,380/420,0.05,200);
+  const grid=new THREE.GridHelper(30,30,0x555566,0x33333e); scene.add(grid);
+  const axes=new THREE.AxesHelper(1.2); scene.add(axes);
+  const comp=document.createElement('canvas');
+  const tex=new THREE.CanvasTexture(comp);
+  tex.magFilter=THREE.NearestFilter; tex.minFilter=THREE.NearestFilter;
+  tex.generateMipmaps=false; tex.colorSpace=THREE.SRGBColorSpace;
+  const mat=new THREE.MeshBasicMaterial({map:tex,transparent:true,alphaTest:0.5,
+    side:THREE.DoubleSide,depthWrite:false});
+  const mesh=new THREE.Mesh(new THREE.PlaneGeometry(1,1),mat); scene.add(mesh);
+  const target=new THREE.Vector3(0,1,0);
+  const view={theta:0.35,phi:1.25,dist:6};
+  function placeCam(){
+    const sp=Math.sin(view.phi);
+    camera.position.set(target.x+view.dist*sp*Math.sin(view.theta),
+      target.y+view.dist*Math.cos(view.phi),target.z+view.dist*sp*Math.cos(view.theta));
+    camera.lookAt(target);
+  }
+  let drag=null;
+  c.addEventListener('pointerdown',ev=>{drag={x:ev.clientX,y:ev.clientY};c.setPointerCapture(ev.pointerId);});
+  c.addEventListener('pointermove',ev=>{ if(!drag)return;
+    view.theta-=(ev.clientX-drag.x)*0.008; view.phi=Math.max(0.25,Math.min(1.52,view.phi-(ev.clientY-drag.y)*0.006));
+    drag={x:ev.clientX,y:ev.clientY}; });
+  c.addEventListener('pointerup',()=>drag=null);
+  c.addEventListener('wheel',ev=>{ev.preventDefault();
+    view.dist=Math.max(1.2,Math.min(30,view.dist*(ev.deltaY>0?1.12:0.89)));},{passive:false});
+  $('p3-reset').onclick=()=>{view.theta=0.35;view.phi=1.25;view.dist=6;};
+  const src=document.createElement('canvas');
+  P3={lastKey:'',update(){
+    const cfg=readExportSettings();
+    const key=[S.motion,S.frame,compositeRev,cfg.outW,cfg.outH,cfg.pivotX,cfg.pivotY,cfg.maxDim,cfg.fit].join('|');
+    if(key!==P3.lastKey){
+      P3.lastKey=key;
+      const [cw,ch]=cellSize(); src.width=cw; src.height=ch;
+      const sctx=src.getContext('2d',{willReadFrequently:true});
+      sctx.clearRect(0,0,cw,ch); drawFrame(sctx,S.motion,S.frame,true);
+      comp.width=cfg.outW; comp.height=cfg.outH;
+      const octx=comp.getContext('2d',{willReadFrequently:true});
+      octx.clearRect(0,0,cfg.outW,cfg.outH);
+      const bb=bboxOf(sctx,cw,ch);
+      if(bb){
+        const bw=bb.x1-bb.x0+1,bh=bb.y1-bb.y0+1;
+        const sc=cfg.fit?Math.min(cfg.maxDim/Math.max(bw,bh),cfg.pivotY/bh,cfg.outW/bw,1):1;
+        const nw=Math.max(1,Math.round(bw*sc)),nh=Math.max(1,Math.round(bh*sc));
+        octx.imageSmoothingEnabled=true; octx.imageSmoothingQuality='high';
+        octx.drawImage(src,bb.x0,bb.y0,bw,bh,Math.round(cfg.pivotX-nw/2),Math.round(cfg.pivotY-nh),nw,nh);
+      }
+      tex.needsUpdate=true;
+      const ps=cfg.pixelSize||0.009;
+      mesh.geometry.dispose();
+      const g=new THREE.PlaneGeometry(cfg.outW*ps,cfg.outH*ps);
+      g.translate(0,(cfg.outH/2-cfg.pivotY)*ps,0);   // 原点移到 pivot(脚底)
+      mesh.geometry=g; mesh.position.set(0,cfg.pivotY*ps,0);
+    }
+    mesh.visible=true;
+    if($('p3-bill').checked) mesh.lookAt(camera.position); else mesh.rotation.set(0,0,0);
+    placeCam(); renderer.render(scene,camera);
+  }};
+  placeCam();
+  return P3;
 }
 
 // ---------- 初始化 ----------

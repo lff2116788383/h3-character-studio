@@ -126,6 +126,7 @@
    只含与脚本标定不同的锚点; 2026-11-26 全链路已验证: 微调/拖拽/刷新暂存/导出/重置）。
    待办: 让 `build_prototype_assets.py`（及量产构建脚本）**优先读取** `output/anchors_manual.json`
    覆盖脚本标定, 形成人工标定进管线的正式入口; 导入后 §7.7 的逐帧人工标定即成为量产标准流程。
-9. ~~纸娃娃工具一期~~ ✅ 2026-11-26: `prototype/tool.html`（文档 `docs/paperdoll-tool.md`）。
-   二期: 3D 场景缩放演示（billboard/透视相机, 法线受光再议）; 另: bindings.json 回灌产线、多方向批量。
+9. ~~纸娃娃工具一期+二期~~ ✅ 2026-11-26: `prototype/tool.html`（文档 `docs/paperdoll-tool.md`）。
+   一期: 资产库筛选/拖拽绑定/单帧微调/客户端 ZIP 导出; 二期: 3D 场景缩放演示(billboard/透视相机)。
+   后续: bindings.json 回灌产线、多方向批量、工程 zip 分享。
 
