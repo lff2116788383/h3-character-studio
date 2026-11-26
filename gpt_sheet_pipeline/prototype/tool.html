@@ -166,6 +166,9 @@
   <span style="flex:1"></span>
   <span>缩放</span><button id="z-out">−</button><span id="z-lab">140%</span><button id="z-in">＋</button>
   <button id="t3d">3D 演示</button>
+  <button id="prj-save" title="资产+绑定+热区+导出设置 打包为工程 ZIP，可换机继续编辑">保存工程</button>
+  <button id="prj-open" title="导入工程 ZIP 恢复编辑现场">打开工程</button>
+  <input id="prj-file" type="file" accept=".zip,application/zip" style="display:none">
   <button id="exp" class="primary">导出客户端 ZIP</button>
 </div>
 </div>
@@ -688,6 +691,103 @@ async function exportZip(){
   $('exp').disabled=false; $('exp').textContent='导出客户端 ZIP';
 }
 $('exp').onclick=exportZip;
+
+// ---------- 工程 ZIP 保存 / 分享（paperdoll-project-v1） ----------
+async function saveProjectZip(){
+  const cfg=readExportSettings(); saveProject();
+  $('prj-save').disabled=true; $('prj-save').textContent='打包中…';
+  try{
+    const files={},assetList=[];
+    for(const a of assets.values()){
+      if(a.builtin||!a.blob) continue;
+      const fname=`assets/${a.id}.png`;
+      files[fname]=await a.blob.arrayBuffer();
+      assetList.push({id:a.id,name:a.name,slot:a.slot,tags:a.tags||'',
+        cols:a.cols,frames:a.frames,w:a.w,h:a.h,file:fname});
+    }
+    const project={schema:'paperdoll-project-v1',version:1,saved:new Date().toISOString(),
+      export_settings:cfg,motions:S.motions,bindings:S.bindings,assets:assetList};
+    files['project.json']=JSON.stringify(project,null,1);
+    files['README.txt']=
+      '纸娃娃工具工程 ZIP（paperdoll-project-v1）\n'+
+      'project.json：导出设置、动作素体引用、槽位绑定/单帧修正/热区轨迹、自定义资产清单。\n'+
+      'assets/*.png：自定义资产原图（内置资产不入包，导入端自动重建）。\n'+
+      '在 tool.html 点「打开工程」选择本 ZIP 即恢复编辑现场；客户端产物请用「导出客户端 ZIP」。\n';
+    const zip=zipStore(files);
+    const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([zip],{type:'application/zip'}));
+    a.download=`${cfg.id}-${cfg.version}-project.zip`; a.click(); URL.revokeObjectURL(a.href);
+    toast(`工程已保存：自定义资产 ${assetList.length} 个 · 绑定/热区/导出设置已打包`);
+  }catch(e){ console.error(e); toast('保存工程失败: '+e.message,4000); }
+  $('prj-save').disabled=false; $('prj-save').textContent='保存工程';
+}
+async function zipRead(buf){
+  const u8=new Uint8Array(buf),dv=new DataView(buf),dec=new TextDecoder();
+  let eocd=-1;
+  for(let i=u8.length-22;i>=Math.max(0,u8.length-22-65535);i--)
+    if(dv.getUint32(i,true)===0x06054b50){eocd=i;break;}
+  if(eocd<0) throw new Error('不是有效的 ZIP（找不到目录结尾）');
+  const count=dv.getUint16(eocd+10,true);
+  let p=dv.getUint32(eocd+16,true);
+  const out=new Map();
+  for(let i=0;i<count;i++,p+=46+dv.getUint16(p+28,true)+dv.getUint16(p+30,true)+dv.getUint16(p+32,true)){
+    if(dv.getUint32(p,true)!==0x02014b50) throw new Error('ZIP 目录损坏');
+    const method=dv.getUint16(p+10,true),csize=dv.getUint32(p+20,true),usize=dv.getUint32(p+24,true);
+    const name=dec.decode(u8.subarray(p+46,p+46+dv.getUint16(p+28,true)));
+    const lho=dv.getUint32(p+42,true);
+    if(dv.getUint32(lho,true)!==0x04034b50) throw new Error('ZIP 本地头损坏: '+name);
+    const dstart=lho+30+dv.getUint16(lho+26,true)+dv.getUint16(lho+28,true);
+    let data=u8.subarray(dstart,dstart+csize);
+    if(method===8){
+      const st=new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+      data=new Uint8Array(await new Response(st).arrayBuffer());
+    }else if(method!==0) throw new Error('不支持的 ZIP 压缩方式: '+name);
+    if(data.length!==usize||crc32(data)!==dv.getUint32(p+16,true))
+      throw new Error('ZIP 校验失败: '+name);
+    out.set(name,data);
+  }
+  return out;
+}
+async function openProjectZip(file){
+  const files=await zipRead(await file.arrayBuffer());
+  const pj=files.get('project.json');
+  if(!pj) throw new Error('缺少 project.json（客户端产物 ZIP 不能当工程导入）');
+  const proj=JSON.parse(new TextDecoder().decode(pj));
+  if(proj.schema!=='paperdoll-project-v1') throw new Error('project.json schema 不符: '+proj.schema);
+  let imported=0;
+  for(const meta of proj.assets||[]){
+    const data=files.get(meta.file); if(!data||assets.has(meta.id)) continue;
+    const blob=new Blob([data],{type:'image/png'});
+    const bmp=await createImageBitmap(blob);
+    const rec={id:meta.id,name:meta.name,slot:meta.slot,tags:meta.tags||'',
+      cols:meta.cols,frames:meta.frames,blob};
+    assets.set(meta.id,{...rec,w:bmp.width,h:bmp.height,img:bmp,builtin:false});
+    if(db) await idbPut('assets',rec);
+    imported++;
+  }
+  if(proj.export_settings) applyExportSettings(proj.export_settings);
+  for(const m in proj.motions||{}){
+    const M=proj.motions[m];
+    if(S.motions[m]&&assets.has(M.assetId)) S.motions[m]=M;
+  }
+  const bs=proj.bindings||{};
+  for(const s of ['cloth','headwear','weapon']){
+    const b=bs[s]; if(!b) continue;
+    const ids=s==='cloth'?Object.values(b.byMotion||{}):[b.assetId];
+    if(ids.every(id=>!id||assets.has(id))) S.bindings[s]=b;
+  }
+  $('scrub').max=curMotion().frames-1; S.frame=Math.min(S.frame,curMotion().frames-1);
+  renderLib(); renderAssetPanel(); renderSlots(); saveProject();
+  toast(`工程已导入：恢复自定义资产 ${imported}/${(proj.assets||[]).length} 个 · 绑定/热区/设置已还原`);
+}
+$('prj-save').onclick=saveProjectZip;
+$('prj-open').onclick=()=>$('prj-file').click();
+$('prj-file').onchange=async ev=>{
+  const f=ev.target.files[0]; ev.target.value=''; if(!f) return;
+  $('prj-open').disabled=true; $('prj-open').textContent='导入中…';
+  try{ await openProjectZip(f); }
+  catch(e){ console.error(e); toast('打开工程失败: '+e.message,4000); }
+  $('prj-open').disabled=false; $('prj-open').textContent='打开工程';
+};
 
 // ---------- 最小 ZIP（stored，无压缩，UTF-8 文件名） ----------
 const CRC_T=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;

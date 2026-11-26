@@ -82,7 +82,7 @@
 
 - 换装系统完整方案（架构/资源账/落地步骤）: `docs/hd2d-equipment-swap-plan.md`
 - three.js 原型: `prototype/index.html` + `prototype_data.json`（由 `build_prototype_assets.py` 生成）
-- **纸娃娃绑定导出工具**: `prototype/tool.html`（资产库筛选/拖拽绑定/单帧微调/客户端 ZIP 导出），
+- **纸娃娃绑定导出工具**: `prototype/tool.html`（资产库筛选/拖拽绑定/单帧微调/工程 ZIP 分享/客户端 ZIP 导出），
   用法与实测见 `docs/paperdoll-tool.md`；`index.html?edit=1` 为其轻量锚点校准前身。
 - 运行: `cd prototype && python serve.py 8765`
 - 已实测组合: walk+刀(挂载✓), attack起手+绿袍(z序身后✓), attack劈下+绿袍+斗笠(挂载✓)
@@ -129,6 +129,7 @@
    文件不存在则原流程零变化；schema/动作/帧号/锚点非法会明确报错。
    已测: 临时目录双 schema 单测 + 真实构建 walk#4 [122,73]→[122,46]→恢复 [122,73]，重建产物无 diff。
 9. ~~纸娃娃工具一期+二期~~ ✅ 2026-11-26: `prototype/tool.html`（文档 `docs/paperdoll-tool.md`）。
-   一期: 资产库筛选/拖拽绑定/单帧微调/客户端 ZIP 导出; 二期: 3D 场景缩放演示(billboard/透视相机)。
-   后续: bindings.json 回灌产线、多方向批量、工程 zip 分享。
+   一期: 资产库筛选/拖拽绑定/单帧微调/客户端 ZIP 导出; 二期: 3D 场景缩放演示(billboard/透视相机);
+   工程 ZIP 保存/分享（paperdoll-project-v1, 资产+绑定+热区+设置整包带走）已交付。
+   后续: 多方向批量、衣服跨动作成组绑定。
 
