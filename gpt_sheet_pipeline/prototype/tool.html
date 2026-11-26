@@ -28,6 +28,10 @@
   .row{display:flex;gap:6px;align-items:center;margin:4px 0;flex-wrap:wrap}
   .row label{color:var(--dim);font-size:12px}
   .chips{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}
+  .tabs{display:flex;gap:3px;margin:8px 0 2px}
+  .tabs button{flex:1;padding:6px 2px;font-size:12px}
+  .rtabs{display:flex;gap:3px;margin-bottom:10px}
+  .rtabs button{flex:1;padding:6px 2px;font-size:12px}
   .note{color:#c9a06a;font-size:11px}
   .dim{color:var(--dim);font-size:11px}
   #cards{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px}
@@ -65,14 +69,14 @@
       <button id="imp" class="primary">＋ 导入图片</button>
       <input id="file" type="file" accept="image/png,image/webp" multiple style="display:none">
     </div>
-    <input id="q" type="text" placeholder="搜索名称 / 标签，如：斗笠">
-    <div class="chips" id="slot-chips"></div>
-    <div class="chips" id="series-chips"></div>
-    <div class="row">
+    <div class="tabs" id="slot-tabs"></div>
+    <input id="q" type="text" placeholder="搜索当前分类…">
+    <div class="row" style="margin:2px 0">
       <label><input id="bound-only" type="checkbox" style="width:auto"> 只看已绑定</label>
     </div>
+    <div class="chips" id="series-chips"></div>
     <div id="cards"></div>
-    <div class="note">用法：把卡片拖到中间角色上即绑定；衣服/素体卡片也可在右侧“设为当前动作”。</div>
+    <div class="note">按 RPG Maker 生成器方式分页：一次只看一个部件类别。拖卡片到中间角色上即绑定；素体卡片 = 设为当前动作。</div>
   </div>
 
   <div id="stage">
@@ -87,85 +91,97 @@
   </div>
 
   <div class="col" id="props">
-    <div class="grp" id="asset-box">
-      <h3>选中资产</h3>
-      <div id="asset-info" class="dim">未选中（点击左侧卡片）</div>
-      <div id="asset-edit" style="display:none">
-        <div class="row"><label>名称</label><input id="a-name" type="text"></div>
-        <div class="row"><label>类型</label>
-          <select id="a-slot">
-            <option value="headwear">头盔/头饰</option><option value="weapon">武器</option>
-            <option value="cloth">衣服(整格)</option><option value="body">素体(序列)</option>
-            <option value="other">其他</option>
+    <div class="rtabs">
+      <button id="rt-bind" class="on">部件 · 绑定</button>
+      <button id="rt-hot">热区校准</button>
+      <button id="rt-exp">导出</button>
+    </div>
+
+    <div id="rp-bind">
+      <div class="grp" id="asset-box">
+        <h3>选中资产</h3>
+        <div id="asset-info" class="dim">未选中（点击左侧卡片）</div>
+        <div id="asset-edit" style="display:none">
+          <div class="row"><label>名称</label><input id="a-name" type="text"></div>
+          <div class="row"><label>类型</label>
+            <select id="a-slot">
+              <option value="headwear">头盔/头饰</option><option value="weapon">武器</option>
+              <option value="cloth">衣服(整格)</option><option value="hair">发型(整格)</option>
+              <option value="body">素体(序列)</option><option value="other">其他</option>
+            </select>
+          </div>
+          <div class="row"><label>标签</label><input id="a-tags" type="text" placeholder="逗号分隔"></div>
+          <div class="row"><label>系列</label><input id="a-series" type="text" placeholder="如 clean / jade / 通用"></div>
+          <div class="row"><label>序列列数</label><input id="a-cols" type="number" min="1" value="1">
+            <label>帧数</label><input id="a-frames" type="number" min="1" value="1"></div>
+          <div class="row">
+            <button id="a-setbody">设为当前动作素体</button>
+            <button id="a-del">删除资产</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="grp">
+        <h3>槽位绑定</h3>
+        <div id="slots"></div>
+        <div id="slot-edit" style="display:none">
+          <div class="row"><label>全局偏移</label>
+            X<input id="b-dx" type="number" value="0"> Y<input id="b-dy" type="number" value="0"></div>
+          <div class="row"><label>缩放</label><input id="b-scale" type="number" step="0.01" value="1">
+            <label id="b-rot-lab">角度°</label><input id="b-rot" type="number" step="1" value="0"></div>
+          <div class="row" id="b-auto-row"><label><input id="b-auto" type="checkbox" style="width:auto"> 武器朝向跟随肘→腕（需先校准锚点）</label></div>
+          <div class="row" id="b-inset-row"><label>挂点(距底%)</label><input id="b-inset" type="number" step="1" value="4"></div>
+          <div class="row" id="b-cloth-row">
+            <button id="b-cloth-all" title="把当前动作的衣服应用到 walk+attack 全部动作">应用到全部动作</button>
+            <button id="b-cloth-only" title="只保留当前动作的衣服绑定">只留当前动作</button>
+          </div>
+          <div class="row">
+            <button id="b-clearfix">清除本帧修正</button>
+            <button id="b-clearallfix">清除全部修正</button>
+            <button id="b-unbind">解绑</button>
+          </div>
+          <div class="note" id="b-warn" style="color:#e2b13c;display:none"></div>
+          <div class="note">暂停后在画布拖动装备 = 只修当前帧；全局偏移在上方改。</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="rp-hot" style="display:none">
+      <div class="grp">
+        <h3>热区（挂点轨迹）</h3>
+        <div class="row">
+          <button id="hot-toggle">显示/编辑热区</button>
+          <select id="hot-key">
+            <option value="head_top">头顶(头饰)</option><option value="wrist_r">手腕(武器)</option>
+            <option value="elbow_r">手肘(朝向)</option>
           </select>
-        </div>
-        <div class="row"><label>标签</label><input id="a-tags" type="text" placeholder="逗号分隔"></div>
-        <div class="row"><label>系列</label><input id="a-series" type="text" placeholder="如 clean / jade / 通用"></div>
-        <div class="row"><label>序列列数</label><input id="a-cols" type="number" min="1" value="1">
-          <label>帧数</label><input id="a-frames" type="number" min="1" value="1"></div>
-        <div class="row">
-          <button id="a-setbody">设为当前动作素体</button>
-          <button id="a-del">删除资产</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="grp">
-      <h3>槽位绑定</h3>
-      <div id="slots"></div>
-      <div id="slot-edit" style="display:none">
-        <div class="row"><label>全局偏移</label>
-          X<input id="b-dx" type="number" value="0"> Y<input id="b-dy" type="number" value="0"></div>
-        <div class="row"><label>缩放</label><input id="b-scale" type="number" step="0.01" value="1">
-          <label id="b-rot-lab">角度°</label><input id="b-rot" type="number" step="1" value="0"></div>
-        <div class="row" id="b-auto-row"><label><input id="b-auto" type="checkbox" style="width:auto"> 武器朝向跟随肘→腕（需先校准锚点）</label></div>
-        <div class="row" id="b-inset-row"><label>挂点(距底%)</label><input id="b-inset" type="number" step="1" value="4"></div>
-        <div class="row" id="b-cloth-row">
-          <button id="b-cloth-all" title="把当前动作的衣服应用到 walk+attack 全部动作">应用到全部动作</button>
-          <button id="b-cloth-only" title="只保留当前动作的衣服绑定">只留当前动作</button>
+          <button id="hot-all">本帧→全部帧</button>
         </div>
         <div class="row">
-          <button id="b-clearfix">清除本帧修正</button>
-          <button id="b-clearallfix">清除全部修正</button>
-          <button id="b-unbind">解绑</button>
+          <button id="anchor-exp">导出锚点JSON</button>
+          <button id="anchor-imp">导入锚点JSON</button>
+          <input id="anchor-file" type="file" accept=".json,application/json" style="display:none">
         </div>
-        <div class="note" id="b-warn" style="color:#e2b13c;display:none"></div>
-        <div class="note">暂停后在画布拖动装备 = 只修当前帧；全局偏移在上方改。</div>
+        <div class="note">开启后拖动彩色圆点编辑当前帧热区（叠有前一帧洋葱皮）；“本帧→全部帧”用于静态/导入素体。锚点 JSON 可跨工程/跨人传递校准成果。</div>
       </div>
     </div>
 
-    <div class="grp">
-      <h3>热区（挂点轨迹）</h3>
-      <div class="row">
-        <button id="hot-toggle">显示/编辑热区</button>
-        <select id="hot-key">
-          <option value="head_top">头顶(头饰)</option><option value="wrist_r">手腕(武器)</option>
-          <option value="elbow_r">手肘(朝向)</option>
-        </select>
-        <button id="hot-all">本帧→全部帧</button>
+    <div id="rp-exp" style="display:none">
+      <div class="grp">
+        <h3>导出设置（客户端契约）</h3>
+        <table class="kv">
+          <tr><td>角色ID</td><td><input id="e-id" type="text" value="jade-traveler"></td></tr>
+          <tr><td>版本</td><td><input id="e-ver" type="text" value="v1"></td></tr>
+          <tr><td>输出帧</td><td><input id="e-size" type="number" value="256"> × <input id="e-size2" type="number" value="256"></td></tr>
+          <tr><td>pivot</td><td>X<input id="e-px" type="number" value="128"> Y<input id="e-py" type="number" value="240"></td></tr>
+          <tr><td>pixel_size</td><td><input id="e-ps" type="number" step="0.001" value="0.009"></td></tr>
+          <tr><td>atlas列/缝/边</td><td><input id="e-cols" type="number" value="8"> <input id="e-gut" type="number" value="2"> <input id="e-mar" type="number" value="1"></td></tr>
+          <tr><td>帧时长ms</td><td><input id="e-ms" type="number" value="42"></td></tr>
+          <tr><td>适配最长边</td><td><input id="e-maxdim" type="number" value="248">
+            <label><input id="e-fit" type="checkbox" checked style="width:auto"> 启用</label></td></tr>
+        </table>
+        <div class="note">与 build_character.py 一致：bbox 裁切→最长边等比→脚底对 pivot、水平居中；另加防裁顶约束 nh≤pivotY。底栏「导出客户端 ZIP」按当前动作导出所有有素体的方向。</div>
       </div>
-      <div class="row">
-        <button id="anchor-exp">导出锚点JSON</button>
-        <button id="anchor-imp">导入锚点JSON</button>
-        <input id="anchor-file" type="file" accept=".json,application/json" style="display:none">
-      </div>
-      <div class="note">开启后拖动彩色圆点编辑当前帧热区（叠有前一帧洋葱皮）；“本帧→全部帧”用于静态/导入素体。锚点 JSON 可跨工程/跨人传递校准成果。</div>
-    </div>
-
-    <div class="grp">
-      <h3>导出设置（客户端契约）</h3>
-      <table class="kv">
-        <tr><td>角色ID</td><td><input id="e-id" type="text" value="jade-traveler"></td></tr>
-        <tr><td>版本</td><td><input id="e-ver" type="text" value="v1"></td></tr>
-        <tr><td>输出帧</td><td><input id="e-size" type="number" value="256"> × <input id="e-size2" type="number" value="256"></td></tr>
-        <tr><td>pivot</td><td>X<input id="e-px" type="number" value="128"> Y<input id="e-py" type="number" value="240"></td></tr>
-        <tr><td>pixel_size</td><td><input id="e-ps" type="number" step="0.001" value="0.009"></td></tr>
-        <tr><td>atlas列/缝/边</td><td><input id="e-cols" type="number" value="8"> <input id="e-gut" type="number" value="2"> <input id="e-mar" type="number" value="1"></td></tr>
-        <tr><td>帧时长ms</td><td><input id="e-ms" type="number" value="42"></td></tr>
-        <tr><td>适配最长边</td><td><input id="e-maxdim" type="number" value="248">
-          <label><input id="e-fit" type="checkbox" checked style="width:auto"> 启用</label></td></tr>
-      </table>
-      <div class="note">与 build_character.py 一致：bbox 裁切→最长边等比→脚底对 pivot、水平居中；另加防裁顶约束 nh≤pivotY。</div>
     </div>
   </div>
 </div>
@@ -206,7 +222,7 @@ const S = {
   direction:'right', motion:'walk', frame:0, playing:false, zoom:1.4,
   showHot:false, hotKey:'head_top',
   selAsset:null, selSlot:null,
-  filter:{slot:'all', series:'all', q:'', boundOnly:false},
+  filter:{slot:'body', series:'all', q:'', boundOnly:false},
   dirs:{},   // 方向 -> {motions:{walk/attack...}, bindings:{cloth,headwear,weapon}}
 };
 const DIRS=['right','left','up','down'];
@@ -344,7 +360,7 @@ async function restoreProject(){
 }
 
 // ---------- 资产库 ----------
-const FILTERS=[['all','全部'],['body','素体'],['hair','发型'],['cloth','衣服'],['headwear','头盔'],['weapon','武器'],['other','其他']];
+const FILTERS=[['body','素体'],['hair','发型'],['cloth','衣服'],['headwear','头盔'],['weapon','武器'],['other','其他']];
 function guessSlot(name){
   const s=name.toLowerCase();
   if(/hair|发型|头发|刘海/.test(s)) return 'hair';
@@ -381,11 +397,13 @@ function autoGroupCloth(aid, curMotion){
   return out;
 }
 function renderLib(){
-  const chips=$('slot-chips'); chips.innerHTML='';
+  // 类别页签（RPG Maker 生成器式：一次只看一个部件类别）
+  const tabbox=$('slot-tabs'); tabbox.innerHTML='';
   for(const [v,lab] of FILTERS){
     const b=document.createElement('button'); b.textContent=lab;
     if(S.filter.slot===v) b.classList.add('on');
-    b.onclick=()=>{S.filter.slot=v;renderLib();}; chips.appendChild(b);
+    b.onclick=()=>{S.filter.slot=v;renderLib();};
+    tabbox.appendChild(b);
   }
   const scbox=$('series-chips'); scbox.innerHTML='';
   const seriesList=['all',...new Set([...assets.values()].map(a=>a.series||'通用'))];
@@ -429,6 +447,7 @@ function renderAssetPanel(){
   $('a-series').value=a.series||''; $('a-cols').value=a.cols; $('a-frames').value=a.frames;
 }
 $('imp').onclick=()=>$('file').click();
+let lastImportSlot=null;
 $('file').onchange=async ev=>{
   for(const f of ev.target.files){
     try{
@@ -438,10 +457,12 @@ $('file').onchange=async ev=>{
         series:'通用',cols:1,frames:1,blob:f};
       assets.set(id,{...rec,w:bmp.width,h:bmp.height,img:bmp,builtin:false});
       if(db) await idbPut('assets',rec);
-      S.selAsset=id;
+      S.selAsset=id; lastImportSlot=rec.slot;
     }catch(e){ toast('导入失败: '+f.name); }
   }
-  ev.target.value=''; renderLib(); renderAssetPanel();
+  ev.target.value='';
+  if(lastImportSlot){ S.filter.slot=lastImportSlot; }   // 导入后跳到对应类别页
+  renderLib(); renderAssetPanel();
 };
 $('q').oninput=e=>{S.filter.q=e.target.value;renderLib();};
 $('bound-only').onchange=e=>{S.filter.boundOnly=e.target.checked;renderLib();};
@@ -1103,6 +1124,14 @@ async function ensure3D(){
   }};
   placeCam();
   return P3;
+}
+
+// ---------- 右侧面板页签（部件·绑定 / 热区校准 / 导出） ----------
+const RP_TABS=[['rt-bind','rp-bind','bind'],['rt-hot','rp-hot','hot'],['rt-exp','rp-exp','exp']];
+for(const [btn,pane] of RP_TABS){
+  $(btn).onclick=()=>{
+    for(const [b2,p2] of RP_TABS){ $(b2).classList.toggle('on',b2===btn); $(p2).style.display=p2===pane?'':'none'; }
+  };
 }
 
 // ---------- 键盘快捷键（输入框聚焦时忽略） ----------
