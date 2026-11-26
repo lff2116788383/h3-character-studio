@@ -626,7 +626,7 @@ $('dir-sel').onchange=e=>{S.direction=e.target.value;S.frame=0;
   const M=curMotion(); $('scrub').max=M?M.frames-1:0;
   $('dir-copy').style.display=S.direction==='right'?'none':'';
   $('dir-clear').style.display=S.direction==='right'?'none':'';
-  renderSlots();};
+  renderSlots(); saveProject();};
 $('dir-copy').onclick=()=>{const src=S.dirs.right; if(!src)return;
   curDir().bindings=JSON.parse(JSON.stringify(src.bindings));
   renderSlots(); saveProject();
