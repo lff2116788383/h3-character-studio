@@ -24,6 +24,67 @@ CW, CH = 256, 512
 # 锚点表必须逐动作×方向实测, 不可跨动作复用。
 WALK_HEAD_TOP = [[122, 73], [123, 74], [122, 74], [121, 74], [122, 73], [122, 74], [122, 74], [121, 74]]
 
+ANCHOR_KEYS = {"head_top", "wrist_r", "elbow_r", "ankle_a", "ankle_b"}
+
+
+def _point(value, where: str) -> list[int]:
+    if (not isinstance(value, list) or len(value) != 2
+            or not all(isinstance(v, (int, float)) for v in value)):
+        raise ValueError(f"[manual anchors] {where} 应为 [x, y]，实际: {value!r}")
+    return [int(round(value[0])), int(round(value[1]))]
+
+
+def apply_manual_anchor_overrides(motions: dict, root: Path = HERE / "output") -> int:
+    """人工标定覆盖脚本标定；文件不存在则完全不影响原流程。
+
+    支持两类输入（后处理的 anchors_manual.json 优先级最高）：
+      output/paperdoll_bindings.json — 纸娃娃工具 bindings.json，schema=paperdoll-bindings-v1，
+        取其中 motion + anchors 全帧热区轨迹；
+      output/anchors_manual.json — index.html?edit=1 导出，schema=anchors-manual-v1，
+        motions.<motion>.<frame>.<key> 稀疏覆盖。
+    """
+    applied = 0
+
+    def assign(motion: str, frame: int, key: str, value, source: str) -> None:
+        nonlocal applied
+        if motion not in motions:
+            raise ValueError(f"[manual anchors] {source}: 未知动作 {motion!r}")
+        frames = motions[motion]
+        if not isinstance(frame, int) or not 0 <= frame < len(frames):
+            raise ValueError(f"[manual anchors] {source}: {motion} 帧号越界 {frame!r}")
+        if key not in ANCHOR_KEYS:
+            raise ValueError(f"[manual anchors] {source}: 未知锚点 {key!r}")
+        frames[frame][key] = _point(value, f"{source}:{motion}#{frame}.{key}")
+        applied += 1
+
+    bindings_path = root / "paperdoll_bindings.json"
+    if bindings_path.exists():
+        payload = json.loads(bindings_path.read_text(encoding="utf-8"))
+        if payload.get("schema") != "paperdoll-bindings-v1":
+            raise ValueError("[manual anchors] paperdoll_bindings.json schema 不符")
+        motion = payload["motion"]
+        for i, frame_anchors in enumerate(payload["anchors"]):
+            for key, value in frame_anchors.items():
+                if key in ANCHOR_KEYS:
+                    assign(motion, i, key, value, bindings_path.name)
+        print(f"[manual anchors] {bindings_path.name}: 已回灌 {motion} 热区轨迹")
+
+    manual_path = root / "anchors_manual.json"
+    if manual_path.exists():
+        payload = json.loads(manual_path.read_text(encoding="utf-8"))
+        if payload.get("schema") != "anchors-manual-v1":
+            raise ValueError("[manual anchors] anchors_manual.json schema 不符")
+        for motion, frames in payload.get("motions", {}).items():
+            for frame_text, values in frames.items():
+                for key, value in values.items():
+                    assign(motion, int(frame_text), key, value, manual_path.name)
+        print(f"[manual anchors] {manual_path.name}: 稀疏覆盖已应用")
+
+    if applied:
+        print(f"[manual anchors] 共覆盖 {applied} 个锚点（人工标定优先）")
+    return applied
+
+
 
 def reassemble(cells: list[Image.Image], size=(CW, CH)) -> Image.Image:
     sheet = Image.new("RGBA", (size[0] * COLS, size[1] * ROWS), (0, 0, 0, 0))
@@ -99,6 +160,7 @@ def main() -> None:
     atk_src = json.loads((HERE / "output/attack/anchors_attack.json").read_text(encoding="utf-8"))
     atk_anchors = [{"wrist_r": f["wrist_r"], "elbow_r": f["elbow_r"], "head_top": f["head_top"]}
                    for f in atk_src["frames"]]
+    apply_manual_anchor_overrides({"walk": walk_anchors, "attack": atk_anchors})
 
     data = {
         "cell": [CW, CH],

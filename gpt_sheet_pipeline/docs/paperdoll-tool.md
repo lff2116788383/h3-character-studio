@@ -66,8 +66,15 @@ python serve.py 8765
 - 播放/逐帧/改绑定/改热区会同步刷新 3D 贴图（与 2D 画布同源）。
 - 基础 unlit 贴图演示；客户端的逐帧法线受光不在此复刻。
 
+## 回灌产线（已接通）
+
+纸娃娃 ZIP 中的 `bindings.json` 可复制为 `gpt_sheet_pipeline/output/paperdoll_bindings.json`，
+再运行 `build_prototype_assets.py`，其 `anchors` 热区轨迹会覆盖脚本标定并重建 `prototype_data.json`。
+`index.html?edit=1` 导出的稀疏锚点则放 `output/anchors_manual.json`；两者同时存在时后者优先。
+文件不存在时构建流程不变。非法 schema/动作/帧号/锚点会直接报错，不会静默写坏数据。
+
 ## 边界与下一步
 
-- ~~一期只做 2D 绑定+导出~~；3D 场景缩放演示已交付。
+- 一期 2D 绑定+导出、二期 3D 场景缩放演示均已交付；热区回灌产线已接通。
 - 多方向批量、衣服跨动作成组绑定、工程 zip 分享：后续按需。
 - 不修改 hd2d-mmo 客户端；产物拷贝接入属另行立项。

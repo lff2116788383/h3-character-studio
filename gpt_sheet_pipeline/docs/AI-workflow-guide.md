@@ -121,11 +121,13 @@
    边缘 1px 腐蚀; 动 `common.py` 前先做前后 A/B, 别悄悄改影响全部存量资产。
 7. walk 与 attack 素体未共配准（头冠线差 26px、脚底对齐但头顶高度不一致）: 量产前在
    `build_prototype_assets.py`/`build_character.py` 里统一按头顶+脚线双基准对齐, 否则跨动作小件锚点都要另标。
-8. **锚点人工校准闭环的构建侧接入**: `prototype/index.html` 已支持 `?edit=1` 校准模式
-   （拖拽/方向键微调, localStorage 暂存, 导出 `anchors_manual.json`, schema=anchors-manual-v1,
-   只含与脚本标定不同的锚点; 2026-11-26 全链路已验证: 微调/拖拽/刷新暂存/导出/重置）。
-   待办: 让 `build_prototype_assets.py`（及量产构建脚本）**优先读取** `output/anchors_manual.json`
-   覆盖脚本标定, 形成人工标定进管线的正式入口; 导入后 §7.7 的逐帧人工标定即成为量产标准流程。
+8. ~~**锚点人工校准闭环的构建侧接入**~~ ✅ 2026-11-26:
+   `prototype/index.html?edit=1` 导出 `anchors_manual.json`（schema=anchors-manual-v1，稀疏覆盖）；
+   纸娃娃工具导出 `bindings.json`（schema=paperdoll-bindings-v1，全帧热区轨迹）。
+   用法: 分别复制为 `output/anchors_manual.json` / `output/paperdoll_bindings.json` 后运行
+   `build_prototype_assets.py`；**人工标定优先于脚本标定**，anchors_manual 优先级最高。
+   文件不存在则原流程零变化；schema/动作/帧号/锚点非法会明确报错。
+   已测: 临时目录双 schema 单测 + 真实构建 walk#4 [122,73]→[122,46]→恢复 [122,73]，重建产物无 diff。
 9. ~~纸娃娃工具一期+二期~~ ✅ 2026-11-26: `prototype/tool.html`（文档 `docs/paperdoll-tool.md`）。
    一期: 资产库筛选/拖拽绑定/单帧微调/客户端 ZIP 导出; 二期: 3D 场景缩放演示(billboard/透视相机)。
    后续: bindings.json 回灌产线、多方向批量、工程 zip 分享。
