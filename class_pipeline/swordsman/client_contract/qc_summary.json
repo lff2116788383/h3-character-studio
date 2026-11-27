@@ -1,0 +1,32 @@
+{
+ "right": {
+  "adjacent_iou_mean": 0.78,
+  "adjacent_iou_min": 0.728,
+  "loop_closure_iou": 0.955
+ },
+ "motions\\attack1": {
+  "adjacent_iou_mean": 0.586,
+  "adjacent_iou_min": 0.492,
+  "loop_closure_iou": 0.94
+ },
+ "motions\\attack2": {
+  "adjacent_iou_mean": 0.389,
+  "adjacent_iou_min": 0.063,
+  "loop_closure_iou": 0.951
+ },
+ "motions\\death": {
+  "adjacent_iou_mean": 0.578,
+  "adjacent_iou_min": 0.441,
+  "loop_closure_iou": 0.066
+ },
+ "motions\\idle": {
+  "adjacent_iou_mean": 0.954,
+  "adjacent_iou_min": 0.927,
+  "loop_closure_iou": 0.974
+ },
+ "motions\\run": {
+  "adjacent_iou_mean": 0.669,
+  "adjacent_iou_min": 0.571,
+  "loop_closure_iou": 0.557
+ }
+}

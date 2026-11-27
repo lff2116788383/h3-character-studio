@@ -1,0 +1,14 @@
+# 剑客几何标注 v1（归一化空间: 内容底 y=248, 水平中心 x=128, 角色高≈248）
+# 坐标为 load_frame 归一化后空间; 首版近似标注, 按 lighting_compare 目检迭代
+parts:
+  - {kind: tube, points: [[95,80],[168,170]], radius: 7, region: [128,130,115,115]}   # 背剑(柄左上→尖右下)
+  - {kind: tube, points: [[118,62],[96,120],[92,168]], radius: 15}                     # 马尾(头后垂左)
+  - {kind: ellipsoid, spec: [128,140,34,46], slope: 0.5}                               # 袍身躯干
+  - {kind: tube, points: [[118,178],[104,242]], radius: 14}                            # 后腿
+  - {kind: tube, points: [[136,178],[150,244]], radius: 14}                            # 前腿
+  - {kind: tube, points: [[106,118],[92,155]], radius: 11}                             # 后臂
+  - {kind: tube, points: [[148,118],[163,152]], radius: 11}                            # 前臂
+  - {kind: ellipsoid, spec: [128,72,21,22], slope: 0.55}                               # 头/脸
+  - {kind: ellipsoid, spec: [128,45,62,17], slope: 0.4}                                # 斗笠(宽扁)
+silver_polys:
+  - [[104,84],[112,79],[178,162],[170,172]]                                            # 刀刃(金属高光)

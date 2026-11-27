@@ -62,12 +62,18 @@ def matte_cell(cell: Image.Image) -> Image.Image | None:
         alpha = (labels == biggest).astype(np.uint8)
     if alpha.mean() < 0.03:
         return None
+    # v3: 1px 腐蚀吃掉轮廓 halo 环 + 全局去品红(发梢/衣料混入品红的过渡像素在
+    # 前景内部, 边缘带 despill 够不着)。判定 r、b 同高且 g 显著低 = 品红系;
+    # 红腰带/流苏 b 低不受影响。
+    alpha = cv2.erode(alpha, np.ones((3, 3), np.uint8), iterations=1)
     fg = alpha > 0
-    edge_band = cv2.dilate(fg.astype(np.uint8), np.ones((9, 9), np.uint8)) > 0
     r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
     r2 = (r + b) / 2
-    cast = edge_band & fg & (r > 60) & (b > 60) & (g < r2 - 15)
-    rgb[..., 1][cast] = np.maximum(g[cast], r2[cast] * 0.88)
+    m = r2 - g
+    cast = fg & (r > 90) & (b > 90) & (m > 20)
+    rgb[..., 0][cast] -= m[cast] * 0.7
+    rgb[..., 2][cast] -= m[cast] * 0.7
+    rgb[..., 1][cast] += m[cast] * 0.35
     return Image.fromarray(np.dstack([rgb.clip(0, 255).astype(np.uint8), alpha * 255]), "RGBA")
 
 

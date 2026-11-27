@@ -148,6 +148,9 @@ Step6 四方向: left=right 镜像(免费); up/down 各跑一轮 Step2-5(每方�
    否则稳定跑偏出腰剑。
 5. **API 传 2048 尺寸**: 上限 1536, 会被回落——一锅出 cell 192px 是当前现实,
    想要更大格子只能减列数（如 4×8=32 格 cell 384px, 代价是动作分多张）。
+6. **抠底只做边缘带 despill 不够**: 品红过渡像素会大片连进前景内部（发梢/衣缘）,
+   边缘带处理完仍有粉晕——必须**全局去品红**（r、b 同高且 g 显著低才判定,
+   红腰带/流苏等 b 低的红色系衣料不受影响）, 外加 1px alpha 腐蚀吃掉轮廓 halo 环。
 
 ## 9. 剑客 pilot 实验记录（2026-11-27, 全部入库）
 
@@ -160,12 +163,66 @@ Step6 四方向: left=right 镜像(免费); up/down 各跑一轮 Step2-5(每方�
   qc_sheet.py v2 已修）。
 - commit: 8225eca（pilot 实验）→ 本目录重构（独立产线化）。
 
-## 10. TODO（接手从这里开始）
+### 9.1 闭环补全（2026-11-27 下午, 契约导出 + Step5 + 法线移植）
 
-1. `build_class_assets.py` 跑通剑客 → `assets/` 7 动作透明 sheet + manifest。
-2. Step5 播放验证: manifest 喂预览页/纸娃娃工具逐动作目检（walk 循环闭合、
-   attack 弧线、death 落地、脚底稳定性）。
-3. 放大策略拍板: 原生 192 cell vs prompt 要求角色占满格子重生成 vs NEAREST 放大。
+- **契约导出** `scripts/export_client_contract.py` → `swordsman/client_contract/`:
+  crescent-traveler v1 同契约（character.json + right/{animation.json,atlas.png,frames/}）,
+  帧 256×256 重锚定（脚底 y=240 / 中心 x=128, 旧产线 fit_canvas 同规格）,
+  全动作共享 96 色 MEDIANCUT 色板; walk 作 drop-in clip, 全动作在 `motions/` 扩展键
+  （character.json "motions" 为扩展, 客户端忽略未知键, 多 clip 支持待客户端立项）。
+- **QC 数字**: walk 循环闭合 0.955 / idle 0.974 / attack1 0.94 / attack2 相邻
+  min 0.063（突刺大位移, 逐帧目检为合理快变非撕裂）/ death 首尾 0.066（站→躺, 预期）
+  / **run 首尾 0.557 偏低**——f7 相位与 f0 不接, 待补行（TODO#1）。
+- **Step5 播放验证** `preview.html`（自包含 canvas2d 播放器: 动作切换/逐帧 scrub/
+  洋葱皮/脚底线/URL 参数）: walk 循环、attack 弧线、death 落地全部目检通过。
+  过程中抓出并修复 **halo 缺陷**（见 §8.6: 全局去品红 + 1px 腐蚀, v3 已进
+  build_class_assets.py, 修复后发梢/披风边缘干净、红腰带无误伤）。
+- **法线移植** `scripts/normals.py`（自包含版: 直接吃透明底 RGBA）+ 首版
+  `swordsman/geometry.yaml`（归一化空间手写标注）: 背刀刃 metal mask 命中准确,
+  斗笠/躯干/腿方向明暗成立; 发梢/手臂管件待目检迭代。
+
+## 10. 风格基准与渲染配方（2026-11-27 拍板, 假像素路线）
+
+### 10.1 客户端渲染事实（hd2d-mmo 实测源码）
+
+- 角色 = Sprite3D billboard + **TEXTURE_FILTER_NEAREST**（裸 nearest 无 mipmaps,
+  `pixel_actor.gd:53`, 且有测试断言锁定该行为）; 环境卡用 NEAREST_WITH_MIPMAPS。
+- 视口 1920×1080 无低清视口; 日常取景角色屏显 **~110px 高**, 512px 源帧被最近邻
+  缩小丢弃约 80% 采样 → 硬边阶梯 = **"高清带像素感"（假像素）**, 是设计选择非 bug。
+- 3D 相机带景深(DOF), 精灵随远近会被景深虚化——观感与逸剑同源, 但我们源图精度高。
+
+### 10.2 真像素对标（逸剑风云决实证, UE4 真像素 + 3D 场景）
+
+| 维度 | 真像素（逸剑 ~50px 精灵） | 假像素（本产线 高清厚涂+nearest 缩小） |
+|---|---|---|
+| 拉近镜头 | **立即崩**（像素块放大）→ 对话只能切高清立绘双资产 | 优雅退化到厚涂原画精度, crescent 有 ~4.6× 余量 |
+| 拉远镜头 | 无损但颗粒粗 | 颗粒变细, 与 nearest 环境卡质感统一 |
+| 精灵清晰度 | 糊（密度失配+AA 糊+DOF 三重叠加）, **全靠立绘撑观感** | 精灵本身即主视觉, 衣纹/明断保留厚涂信息 |
+| 立绘-精灵关系 | 两次创作, 风格断裂 | 同母版同锚点一次生成, 风格零断层 |
+| 生成侧 | GPT 画不了真像素（§8 死路） | GPT 天然擅长厚涂 cel, 像素感渲染侧白送 |
+
+### 10.3 风格基准（一句话）
+
+**精灵保真度对标"立绘缩小的下限", 不对标"真像素的上限"**——精灵和立绘同源,
+走近是厚涂、拉远是细像素, 同一张画; 相机远近是风格旋钮（颗粒密度可滑）,
+这是真像素做不到的自由度。
+
+### 10.4 边界条件（产线规则由此而来）
+
+1. **拉近端余量不均等**: crescent 512px 源 ≈4.6× 余量; 本产线 cell 192px（有效高
+   ~130px）仅 ~1.4×——日常走场够用, **特写必须大格子重生成, 不许放大 192**（见 TODO#3）。
+2. **拉远端**: 角色裸 nearest 无 mipmaps, 静止干净、跑动远景可能有 1px 边缘爬行;
+   真遇到是客户端一行配置的事（NEAREST_WITH_MIPMAPS）, 不归本产线管但记录在案。
+3. **像素感是渲染侧赠品**: 生成 prompt 永远只管厚涂 cel 质量, 不要试图画像素。
+
+## 11. TODO（接手从这里开始）
+
+1. **run 行循环闭合补行**: f7 相位与 f0 不接（0.557）, 用 `scripts/gen_row.py`
+   出 run 行补条（约 0.09 元）后重跑 build_class_assets + export_client_contract。
+2. Step5 播放验证已完成（2026-11-27, 见 §9.1; 顺带修复 halo 缺陷, 见 §8.6）。
+3. 放大策略拍板: **特写场景用大格子重生成（4 列×8 行 → cell 384px, 代价是动作分
+   多张）, 禁止放大 192 原生图**; 日常走场维持原生 192（屏显 ~110px, 1.4× 余量够用）。
 4. 四方向: up/down 各一轮一锅出（left 镜像免费）; 每方向独立 QC+补行。
 5. 第二职业复制本流程验证产线可复制性。
-6. manifest → 客户端契约对齐（hd2d-mmo crescent-traveler 式）另行立项。
+6. 契约对齐已完成（2026-11-27, `client_contract/` 见 §9.1）; 下一步客户端多 clip
+   支持立项——motions/ 扩展键已就位, 待 character_animation.gd 按动作切换后启用。
