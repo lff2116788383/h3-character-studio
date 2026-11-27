@@ -10,8 +10,10 @@ QC 用 alpha 直接算: 空格检测/相邻 IoU/脚底差, 比品红链的背景
 
 用法:
   python build_transparent_assets.py --class-dir swordsman \
-      --sheet sheets/all_in_one_transparent_v1.png [--cell 256 256]
-输出: assets/<motion>.png + assets/manifest.json + sheets/transparent_rows_<tag>.png
+      --sheet sheets/all_in_one_transparent_v1.png [--cell 256 256] \
+      [--direction right]
+输出: assets/<direction>/<motion>.png + assets/manifest.json(class-assets-v2,
+      directions.<direction> 聚合) + sheets/transparent_rows_<tag>.png
 """
 import argparse
 import json
@@ -95,8 +97,11 @@ def main() -> int:
     ap.add_argument("--class-dir", required=True, type=Path)
     ap.add_argument("--sheet", required=True, type=Path, help="透明 64 格 sheet")
     ap.add_argument("--cell", type=int, nargs=2, default=(256, 256))
+    ap.add_argument("--direction", default="right", choices=["right", "up", "down"],
+                    help="朝向(四方向扩展): 各方向资产入 assets/<direction>/, "
+                         "manifest(class-assets-v2) 按 directions.<direction> 聚合")
     args = ap.parse_args()
-    cd, sheet_path = args.class_dir, args.sheet
+    cd, sheet_path, direction = args.class_dir, args.sheet, args.direction
 
     img = Image.open(sheet_path).convert("RGBA")
     w, h = img.size
@@ -122,11 +127,23 @@ def main() -> int:
     preview_path = sheet_path.parent / f"transparent_rows_{tag}.png"
     preview.save(preview_path, optimize=True)
 
-    manifest = {"schema": "class-assets-v1", "class": cd.name,
-                "source_sheet": sheet_path.name, "pipeline": "transparent-native",
-                "motions": {}}
-    out_dir = cd / "assets"
-    out_dir.mkdir(exist_ok=True)
+    manifest = {"schema": "class-assets-v2", "class": cd.name, "directions": {}}
+    mp = cd / "assets" / "manifest.json"
+    if mp.exists():
+        old = json.loads(mp.read_text(encoding="utf-8"))
+        if isinstance(old.get("directions"), dict):
+            manifest["directions"] = old["directions"]
+        elif old.get("motions"):  # v1 扁平结构一次性迁移为 directions.right
+            manifest["directions"]["right"] = {
+                "source_sheet": old.get("source_sheet", ""),
+                "pipeline": old.get("pipeline", "transparent-native"),
+                "motions": old["motions"],
+            }
+    out_dir = cd / "assets" / direction
+    out_dir.mkdir(parents=True, exist_ok=True)
+    manifest["directions"][direction] = {
+        "source_sheet": sheet_path.name, "pipeline": "transparent-native", "motions": {},
+    }
     for motion in ROW_LAYOUT:
         if motion in EMPTY_ROWS:
             continue
@@ -143,18 +160,19 @@ def main() -> int:
             sheet.paste(f, (i * cw2, 0), f)
         out = out_dir / f"{motion}.png"
         sheet.save(out, optimize=True)
-        manifest["motions"][motion] = {
+        manifest["directions"][direction]["motions"][motion] = {
             "sheet": out.name, "cols": COLS, "frames": COLS,
             "cell": [cw2, ch2], "fps": 11 if motion in ("walk", "run") else (6 if motion == "idle" else 8),
             "loop": motion in ("walk", "idle", "run"),
         }
 
-    (out_dir / "manifest.json").write_text(
+    (cd / "assets" / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
     (sheet_path.parent / f"transparent_qc_{tag}.json").write_text(
         json.dumps({m: qc_row(rows[m]) for m in ROW_LAYOUT if m not in EMPTY_ROWS},
                    ensure_ascii=False, indent=1), encoding="utf-8")
-    print(f"[done] {out_dir}/manifest.json  行条预览: {preview_path.name}")
+    print(f"[done] assets/{direction}/ → manifest.json(directions.{direction})  "
+          f"行条预览: {preview_path.name}")
     return 0
 
 

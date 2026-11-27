@@ -74,7 +74,9 @@ Step3 QC: build_transparent_assets.py 内置 alpha 直读 QC（空格/相邻IoU/
 Step4 资产 scripts/build_transparent_assets.py --sheet <透明sheet>
       → assets/<motion>.png(原生抗锯齿透明底) + manifest.json
 Step5 验证: preview.html 逐动作播放目检（帧序列/脚底/循环闭合）
-Step6 四方向: left=right 镜像(免费); up/down 各跑一轮 Step2-5(每方向独立一锅)
+Step6 四方向: left=right 镜像(免费); up/down 各跑一轮
+      gen_master_turn.py(转向母版×2) → Step2 --facing up|down → Step4
+      --direction up|down → 契约重建(已落地, 见 §9.5)
 ```
 
 新职业 = 复制 `swordsman/` 目录结构 → 出立绘/母版 → 依次跑 Step2-5。
@@ -245,6 +247,31 @@ v2 留档为抽卡对照。品红产物（all_in_one_v1.png / attack2_row_fix.pn
 用法: `python normals.py <帧> swordsman/geometry.yaml <out>`(站姿帧) /
 `python normals.py <帧> swordsman/geometry_attack.yaml <out>`(攻击帧);
 预览: `python scripts/geometry_preview.py <帧> <geometry.yaml> <out.png>`。
+
+### 9.5 四方向扩展（2026-11-27 深夜, right/up/down 三方向落地）
+
+成本 0.54 元（转向母版 ×4 各 0.09 + 一锅 ×2 各 0.09）:
+
+- **转向母版** `scripts/gen_master_turn.py`: 从 right 透明母版生成
+  up(背面)/down(正面) 同姿势母版, 身份/配色/背剑设定全保真
+  （背面版剑身轮廓完整可见; attack 转向版姿势锚弱化为站姿, 靠一锅行描述补）。
+- **一锅出** `gen_all_in_one.py --facing right/up/down`: PROMPT_HEAD 朝向词按
+  FACING_TEXT 替换, 输出 `all_in_one_transparent_<facing>_v<n>.png`。
+- **QC: 三方向 ×7 行全部零空格**（连续 3 次 64 格零空格, 透明直出稳定性确立）:
+  | 方向 | walk(loop) | idle | attack1 | attack2 | death | run(loop) |
+  |---|---|---|---|---|---|---|
+  | up | 0.837(0.874) | 0.929 | 0.651 | 0.743 | 0.702 | 0.792(0.665) |
+  | down | 0.901(0.898) | 0.927 | 0.663 | 0.671 | 0.585 | 0.690(0.623) |
+  up walk 循环 0.874 反超 right(0.722); down attack1/attack2 loop 0.956/0.959
+  (一次性动作首尾回站姿)。down 小瑕疵: attack1 f3 剑形糊/死亡 f1 张臂,
+  契约 256 尺寸下弱化, 可后续 gen_row 补行（待 --facing）。
+- **资产/契约 v2**: `build_transparent_assets.py --direction` → assets/<dir>/ +
+  manifest class-assets-v2(directions.<d> 聚合, v1 扁平自动迁移); 
+  `export_client_contract.py` 多方向导出——每方向 walk drop-in(`<d>/`) +
+  motions/(right 布局零破坏) + motions/<d>/, 跨方向共享 96 色板;
+  character.json v2: directions.{right,up,down}.idle_frame 各自独立。
+- **preview.html 方向切换**: right/up/down 按钮组 + `?direction=` 参数,
+  浏览器终验 up/attack2 f5 与 down/walk 播放全部干净（无 halo/白点）。
 ## 10. 风格基准与渲染配方（2026-11-27 拍板, 假像素路线）
 
 ### 10.1 客户端渲染事实（hd2d-mmo 实测源码）
@@ -287,7 +314,8 @@ v2 留档为抽卡对照。品红产物（all_in_one_v1.png / attack2_row_fix.pn
 2. Step5 播放验证已完成（2026-11-27, 见 §9.1; 顺带修复 halo 缺陷, 见 §8.6）。
 3. 放大策略拍板: **特写场景用大格子重生成（4 列×8 行 → cell 384px, 代价是动作分
    多张）, 禁止放大 192 原生图**; 日常走场维持原生 192（屏显 ~110px, 1.4× 余量够用）。
-4. 四方向: up/down 各一轮一锅出（left 镜像免费）; 每方向独立 QC+补行。
+4. ~~四方向~~ **已完成**（2026-11-27, 见 §9.5）: right/up/down 契约 v2 全落地;
+   遗留: `gen_row.py` 补 `--facing`（up/down 缺格补行前置）。
 5. 第二职业复制本流程验证产线可复制性。
-6. 契约对齐已完成（2026-11-27, `client_contract/` 见 §9.1）; 下一步客户端多 clip
-   支持立项——motions/ 扩展键已就位, 待 character_animation.gd 按动作切换后启用。
+6. ~~契约对齐~~ **已完成 + 多 clip 立项文档已出**（`docs/multi_clip_proposal.md`）;
+   下一步客户端侧立项: 多 clip 播放器（motions/ + clip_meta 扩展键已就位）。

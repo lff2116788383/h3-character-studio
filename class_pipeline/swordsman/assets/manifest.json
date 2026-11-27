@@ -1,74 +1,222 @@
 {
- "schema": "class-assets-v1",
+ "schema": "class-assets-v2",
  "class": "swordsman",
- "source_sheet": "all_in_one_transparent_v2.png",
- "pipeline": "transparent-native",
- "motions": {
-  "walk": {
-   "sheet": "walk.png",
-   "cols": 8,
-   "frames": 8,
-   "cell": [
-    256,
-    256
-   ],
-   "fps": 11,
-   "loop": true
+ "directions": {
+  "right": {
+   "source_sheet": "all_in_one_transparent_v1.png",
+   "pipeline": "transparent-native",
+   "motions": {
+    "walk": {
+     "sheet": "walk.png",
+     "cols": 8,
+     "frames": 8,
+     "cell": [
+      256,
+      256
+     ],
+     "fps": 11,
+     "loop": true
+    },
+    "idle": {
+     "sheet": "idle.png",
+     "cols": 8,
+     "frames": 8,
+     "cell": [
+      256,
+      256
+     ],
+     "fps": 6,
+     "loop": true
+    },
+    "attack1": {
+     "sheet": "attack1.png",
+     "cols": 8,
+     "frames": 8,
+     "cell": [
+      256,
+      256
+     ],
+     "fps": 8,
+     "loop": false
+    },
+    "attack2": {
+     "sheet": "attack2.png",
+     "cols": 8,
+     "frames": 8,
+     "cell": [
+      256,
+      256
+     ],
+     "fps": 8,
+     "loop": false
+    },
+    "death": {
+     "sheet": "death.png",
+     "cols": 8,
+     "frames": 8,
+     "cell": [
+      256,
+      256
+     ],
+     "fps": 8,
+     "loop": false
+    },
+    "run": {
+     "sheet": "run.png",
+     "cols": 8,
+     "frames": 8,
+     "cell": [
+      256,
+      256
+     ],
+     "fps": 11,
+     "loop": true
+    }
+   }
   },
-  "idle": {
-   "sheet": "idle.png",
-   "cols": 8,
-   "frames": 8,
-   "cell": [
-    256,
-    256
-   ],
-   "fps": 6,
-   "loop": true
+  "up": {
+   "source_sheet": "all_in_one_transparent_up_v1.png",
+   "pipeline": "transparent-native",
+   "motions": {
+    "walk": {
+     "sheet": "walk.png",
+     "cols": 8,
+     "frames": 8,
+     "cell": [
+      256,
+      256
+     ],
+     "fps": 11,
+     "loop": true
+    },
+    "idle": {
+     "sheet": "idle.png",
+     "cols": 8,
+     "frames": 8,
+     "cell": [
+      256,
+      256
+     ],
+     "fps": 6,
+     "loop": true
+    },
+    "attack1": {
+     "sheet": "attack1.png",
+     "cols": 8,
+     "frames": 8,
+     "cell": [
+      256,
+      256
+     ],
+     "fps": 8,
+     "loop": false
+    },
+    "attack2": {
+     "sheet": "attack2.png",
+     "cols": 8,
+     "frames": 8,
+     "cell": [
+      256,
+      256
+     ],
+     "fps": 8,
+     "loop": false
+    },
+    "death": {
+     "sheet": "death.png",
+     "cols": 8,
+     "frames": 8,
+     "cell": [
+      256,
+      256
+     ],
+     "fps": 8,
+     "loop": false
+    },
+    "run": {
+     "sheet": "run.png",
+     "cols": 8,
+     "frames": 8,
+     "cell": [
+      256,
+      256
+     ],
+     "fps": 11,
+     "loop": true
+    }
+   }
   },
-  "attack1": {
-   "sheet": "attack1.png",
-   "cols": 8,
-   "frames": 8,
-   "cell": [
-    256,
-    256
-   ],
-   "fps": 8,
-   "loop": false
-  },
-  "attack2": {
-   "sheet": "attack2.png",
-   "cols": 8,
-   "frames": 8,
-   "cell": [
-    256,
-    256
-   ],
-   "fps": 8,
-   "loop": false
-  },
-  "death": {
-   "sheet": "death.png",
-   "cols": 8,
-   "frames": 8,
-   "cell": [
-    256,
-    256
-   ],
-   "fps": 8,
-   "loop": false
-  },
-  "run": {
-   "sheet": "run.png",
-   "cols": 8,
-   "frames": 8,
-   "cell": [
-    256,
-    256
-   ],
-   "fps": 11,
-   "loop": true
+  "down": {
+   "source_sheet": "all_in_one_transparent_down_v1.png",
+   "pipeline": "transparent-native",
+   "motions": {
+    "walk": {
+     "sheet": "walk.png",
+     "cols": 8,
+     "frames": 8,
+     "cell": [
+      256,
+      256
+     ],
+     "fps": 11,
+     "loop": true
+    },
+    "idle": {
+     "sheet": "idle.png",
+     "cols": 8,
+     "frames": 8,
+     "cell": [
+      256,
+      256
+     ],
+     "fps": 6,
+     "loop": true
+    },
+    "attack1": {
+     "sheet": "attack1.png",
+     "cols": 8,
+     "frames": 8,
+     "cell": [
+      256,
+      256
+     ],
+     "fps": 8,
+     "loop": false
+    },
+    "attack2": {
+     "sheet": "attack2.png",
+     "cols": 8,
+     "frames": 8,
+     "cell": [
+      256,
+      256
+     ],
+     "fps": 8,
+     "loop": false
+    },
+    "death": {
+     "sheet": "death.png",
+     "cols": 8,
+     "frames": 8,
+     "cell": [
+      256,
+      256
+     ],
+     "fps": 8,
+     "loop": false
+    },
+    "run": {
+     "sheet": "run.png",
+     "cols": 8,
+     "frames": 8,
+     "cell": [
+      256,
+      256
+     ],
+     "fps": 11,
+     "loop": true
+    }
+   }
   }
  }
 }

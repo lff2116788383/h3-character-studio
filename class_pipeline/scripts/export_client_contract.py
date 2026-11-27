@@ -9,13 +9,15 @@
   atlas.png      : 8列 + gutter2 + margin1, 帧 256×256, 脚底 y=240 / 水平中心 x=128
                    (crescent fit_canvas 同规格; class 资产脚底贴 255, 此处重新锚定)
 
-布局:
+布局(v2 多方向):
   client_contract/
-  ├── character.json          # crescent 精确键 + "motions" 扩展键(客户端忽略未知键)
-  ├── right/                  # walk clip drop-in(移动=walk, 静止=idle_frame, 同 crescent)
+  ├── character.json          # crescent 精确键 + directions.<d> 全方向 + "motions" 扩展键
+  ├── right/                  # right walk drop-in(移动=walk, 静止=idle_frame, 同 crescent)
   │   ├── animation.json | atlas.png | frames/00000.. | report.json
-  └── motions/<motion>/       # 扩展: 全动作 clip(idle/attack1/attack2/death/run)
+  ├── up/ down/               # up/down walk drop-in(四方向扩展后平行新增)
+  └── motions/<motion>/       # right 全动作扩展(idle/attack1/attack2/death/run)
       └── animation.json | atlas.png | frames/ | report.json
+      motions/<d>/<motion>/   # up/down 全动作扩展(平行目录)
 
 用法: python export_client_contract.py --class-dir <class_pipeline/swordsman>
 """
@@ -147,7 +149,7 @@ def build_clip(name: str, frames: list[Image.Image], out_dir: Path, durations: l
         "effective_source_size": [SIZE, SIZE], "palette_rgb": palette_rgb,
         "durations_ms": durations,
         "sources": [{"kind": "class_pipeline assets", "manifest": "assets/manifest.json"}],
-        "provenance": {"pipeline": "class_pipeline", "matting": "bg-reestimate+despill (build_class_assets)",
+        "provenance": {"pipeline": "class_pipeline", "matting": "transparent-native (build_transparent_assets)",
                        "palette": f"shared mediancut {PALETTE_COLORS}", "anchor": "feet y=240 center x=128"},
         "warnings": ["review pending: 需 Step5 播放目检"],
         "visual_review": "pending",
@@ -163,65 +165,72 @@ def main() -> int:
     args = ap.parse_args()
     cd = args.class_dir
     manifest = json.loads((cd / "assets" / "manifest.json").read_text(encoding="utf-8"))
-    motions = manifest["motions"]
-    if not motions:
-        print("[error] assets/manifest.json 无动作, 先跑 build_class_assets.py")
+    directions = manifest.get("directions")
+    if not directions:
+        print("[error] assets/manifest.json 无 directions(需 class-assets-v2); "
+              "先重跑 build_transparent_assets.py --direction <d>")
         return 1
 
-    # 1) 载入全部动作帧并重锚定到 crescent 规格
-    frames_by_motion: dict[str, list[Image.Image]] = {}
-    meta = {}
-    for name, m in motions.items():
-        sheet = Image.open(cd / "assets" / m["sheet"]).convert("RGBA")
-        cols, cell_w, cell_h = m["cols"], m["cell"][0], m["cell"][1]
-        frames = []
-        for i in range(m["frames"]):
-            cell = sheet.crop((i * cell_w, 0, (i + 1) * cell_w, cell_h))
-            frames.append(reanchor(cell))
-        frames_by_motion[name] = frames
-        meta[name] = m
-        print(f"[load] {name}: {len(frames)} 帧 cell={cell_w}x{cell_h} → 重锚定 y={PIVOT[1]}")
+    # 1) 载入全部方向×动作帧并重锚定到 crescent 规格
+    frames_by: dict[str, dict[str, list[Image.Image]]] = {}
+    meta_by: dict[str, dict[str, dict]] = {}
+    for d, dinfo in directions.items():
+        frames_by[d], meta_by[d] = {}, {}
+        for name, m in dinfo["motions"].items():
+            sheet = Image.open(cd / "assets" / d / m["sheet"]).convert("RGBA")
+            cell_w, cell_h = m["cell"][0], m["cell"][1]
+            frames = [reanchor(sheet.crop((i * cell_w, 0, (i + 1) * cell_w, cell_h)))
+                      for i in range(m["frames"])]
+            frames_by[d][name] = frames
+            meta_by[d][name] = m
+            print(f"[load] {d}/{name}: {len(frames)} 帧 cell={cell_w}x{cell_h} → 重锚定 y={PIVOT[1]}")
 
-    # 2) 全动作共享色板量化
-    all_frames = [f for fs in frames_by_motion.values() for f in fs]
+    # 2) 全方向全动作共享色板量化(跨方向配色一致)
+    all_frames = [f for dm in frames_by.values() for fs in dm.values() for f in fs]
     apply_pal, palette_rgb = quantize_shared(all_frames, PALETTE_COLORS)
-    for name in frames_by_motion:
-        frames_by_motion[name] = [apply_pal(f) for f in frames_by_motion[name]]
+    for d in frames_by:
+        for name in frames_by[d]:
+            frames_by[d][name] = [apply_pal(f) for f in frames_by[d][name]]
 
-    # 3) 导出: right/=walk drop-in; motions/=全动作扩展
+    # 3) 导出: <d>/=walk drop-in; motions/=全动作扩展(right 保持旧布局零破坏, up/down 平行新增)
     out_root = cd / "client_contract"
     out_root.mkdir(exist_ok=True)
-    motion_paths = {}
-    for name, frames in frames_by_motion.items():
-        m = meta[name]
-        fps = m.get("fps", FPS_DEFAULT.get(name, 8))
-        dur = split_durations(round(1000 / fps) * len(frames), len(frames))
-        loop = bool(m.get("loop", False))
-        sub = "right" if name == "walk" else f"motions/{name}"
-        build_clip(name, frames, out_root, dur, loop, fps, palette_rgb, rel=sub)
-        motion_paths[name] = {"manifest": f"{sub}/animation.json", "fps": fps, "loop": loop}
-        qc = qc_metrics(frames)
-        print(f"[qc] {name}: {qc} fps={fps} loop={loop}")
-        (out_root / sub / "qc.json").write_text(
-            json.dumps(qc, ensure_ascii=False, indent=1), encoding="utf-8")
+    motion_paths: dict[str, dict[str, dict]] = {}
+    for d in frames_by:
+        motion_paths[d] = {}
+        for name, frames in frames_by[d].items():
+            m = meta_by[d][name]
+            fps = m.get("fps", FPS_DEFAULT.get(name, 8))
+            dur = split_durations(round(1000 / fps) * len(frames), len(frames))
+            loop = bool(m.get("loop", False))
+            sub = (d if name == "walk"
+                   else (f"motions/{name}" if d == "right" else f"motions/{d}/{name}"))
+            build_clip(name, frames, out_root, dur, loop, fps, palette_rgb, rel=sub)
+            motion_paths[d][name] = {"manifest": f"{sub}/animation.json", "fps": fps, "loop": loop}
+            qc = qc_metrics(frames)
+            print(f"[qc] {d}/{name}: {qc} fps={fps} loop={loop}")
+            (out_root / sub / "qc.json").write_text(
+                json.dumps(qc, ensure_ascii=False, indent=1), encoding="utf-8")
 
-    # 4) character.json: crescent 精确键 + motions 扩展键
-    walk_frames = frames_by_motion["walk"]
-    idle_frame = int(np.argmin([np.asarray(f)[..., 3].sum() for f in walk_frames]))
+    # 4) character.json: crescent 精确键 + per-direction motions 扩展键
+    directions_out, motions_out = {}, {}
+    for d in frames_by:
+        walk_frames = frames_by[d]["walk"]
+        idle_frame = int(np.argmin([np.asarray(f)[..., 3].sum() for f in walk_frames]))
+        directions_out[d] = {"manifest": f"{d}/animation.json", "idle_frame": idle_frame,
+                             "generation": "class-pipeline-gpt"}
+        motions_out[d] = {name: p["manifest"] for name, p in motion_paths[d].items()}
     character = {
-        "schema_version": 1, "id": cd.name, "version": "v1",
+        "schema_version": 1, "id": cd.name, "version": "v2",
         "default_direction": "right", "size": [SIZE, SIZE], "pivot": list(PIVOT),
         "pixel_size": 0.009,
-        "directions": {
-            "right": {"manifest": "right/animation.json", "idle_frame": idle_frame,
-                      "generation": "class-pipeline-gpt"}
-        },
+        "directions": directions_out,
         "stationary_behavior": "Hold a reviewed balanced frame from the current direction; "
                                "no separately generated idle animation.",
-        "motions": {d: {name: p["manifest"] for name, p in motion_paths.items()}
-                    for d in ("right",)},  # 扩展键: 客户端忽略未知键, 客户端接入立项后启用
-        "notes": "drop-in 兼容 crescent-traveler v1 契约; idle/attack/death 走 motions/ 扩展,"
-                 " 待客户端支持多 clip 后切换; 真实 idle 动作在 motions/idle。",
+        "motions": motions_out,  # 扩展键: 客户端忽略未知键; per-direction clip 路径
+        "notes": "drop-in 兼容 crescent-traveler v1 契约; v2 起多方向(right/up/down)"
+                 " walk drop-in + per-direction motions/; idle/attack/death 走 motions/,"
+                 " 多 clip 播放支持见 docs/multi_clip_proposal.md。",
     }
     (out_root / "character.json").write_text(
         json.dumps(character, ensure_ascii=False, indent=1), encoding="utf-8")

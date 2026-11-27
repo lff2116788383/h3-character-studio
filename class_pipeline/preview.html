@@ -15,6 +15,8 @@
   #bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center}
   button{background:#2a3140;color:#dfe5ee;border:1px solid #3c4557;padding:4px 12px;cursor:pointer}
   button.on{background:#e8b64c;color:#17181c;border-color:#e8b64c}
+  button.dir{min-width:52px}
+  button.dir.on{background:#6fa8dc;border-color:#6fa8dc}
   input[type=range]{width:280px}
   #info{color:#8a93a5;font-size:12px}
   #qc{max-width:760px;white-space:pre-wrap;font:11px/1.6 Consolas,monospace;color:#7d8798;background:#1e2026;padding:8px 12px;border-radius:6px}
@@ -25,6 +27,7 @@
 <div id="stage"><canvas id="cv"></canvas></div>
 <div id="strip"></div>
 <div id="bar">
+  <span id="dirs"></span>
   <span id="motions"></span>
   <button id="play">⏸ 暂停</button>
   <input id="scrub" type="range" min="0" max="7" value="0" step="1">
@@ -39,10 +42,16 @@ const qs = new URLSearchParams(location.search);
 const cls = qs.get("class") || "swordsman";
 document.getElementById("cls").textContent = cls;
 const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
-let manifest, motions, cur = "walk", idx = 0, playing = true, last = 0, acc = 0;
+let manifest, dir = "right", motions = [], cur = "walk", idx = 0,
+    playing = true, last = 0, acc = 0, sheetImg = {};
+
+// v2 manifest: directions.<d>.motions; 兼容 v1 扁平(motions 顶层)
+const getMotions = () => manifest.directions ? manifest.directions[dir].motions : manifest.motions;
+const assetUrl = (m) => manifest.directions
+  ? `./${cls}/assets/${dir}/${m.sheet}` : `./${cls}/assets/${m.sheet}`;
 
 function draw() {
-  const m = manifest.motions[cur];
+  const m = getMotions()[cur];
   const cellW = m.cell[0], cellH = m.cell[1];
   const z = +document.getElementById("zoom").value;
   cv.width = cellW * z; cv.height = cellH * z;
@@ -63,14 +72,14 @@ function draw() {
     ctx.beginPath(); ctx.moveTo(cv.width / 2 - .5, 0); ctx.lineTo(cv.width / 2 - .5, cv.height); ctx.stroke();
   }
   document.getElementById("info").textContent =
-    `${cur} f${idx}/${m.frames} fps=${m.fps} loop=${m.loop} cell=${cellW}x${cellH}`;
+    `${dir}/${cur} f${idx}/${m.frames} fps=${m.fps} loop=${m.loop} cell=${cellW}x${cellH}`;
   document.getElementById("scrub").value = idx;
   document.querySelectorAll(".cell").forEach((c, i) => c.classList.toggle("cur", i === idx));
 }
 
 function tick(t) {
   if (playing && last) {
-    const m = manifest.motions[cur];
+    const m = getMotions()[cur];
     acc += t - last;
     const step = 1000 / m.fps;
     while (acc >= step) {
@@ -88,7 +97,7 @@ function select(name) {
   cur = name; idx = 0; playing = true;
   document.getElementById("play").textContent = "⏸ 暂停";
   document.querySelectorAll("#motions button").forEach(b => b.classList.toggle("on", b.dataset.m === name));
-  const m = manifest.motions[cur];
+  const m = getMotions()[cur];
   const s = document.getElementById("scrub"); s.max = m.frames - 1; s.value = 0;
   const strip = document.getElementById("strip"); strip.innerHTML = "";
   for (let i = 0; i < m.frames; i++) {
@@ -101,37 +110,58 @@ function select(name) {
   draw();
 }
 
-let sheetImg = {};
-fetch(`./${cls}/assets/manifest.json`).then(r => r.json()).then(mj => {
-  manifest = mj; motions = Object.keys(mj.motions);
-  const bar = document.getElementById("motions");
+function buildDirButtons(dirs) {
+  const bar = document.getElementById("dirs");
+  if (dirs.length <= 1) return;
+  dirs.forEach(d => {
+    const b = document.createElement("button");
+    b.className = "dir"; b.textContent = d; b.dataset.d = d;
+    b.onclick = () => loadDir(d);
+    bar.appendChild(b);
+  });
+}
+
+// 切方向: 重载该方向全部动作 sheet 后重建动作按钮
+function loadDir(d) {
+  dir = d;
+  document.querySelectorAll("#dirs button").forEach(b => b.classList.toggle("on", b.dataset.d === d));
+  motions = Object.keys(getMotions());
+  sheetImg = {};
   Promise.all(motions.map(n => new Promise(res => {
     const im = new Image();
     im.onload = () => { sheetImg[n] = im; res(); };
-    im.src = `./${cls}/assets/${mj.motions[n].sheet}`;
+    im.src = assetUrl(getMotions()[n]);
   }))).then(() => {
+    const bar = document.getElementById("motions"); bar.innerHTML = "";
     motions.forEach(n => {
       const b = document.createElement("button");
       b.textContent = n; b.dataset.m = n;
       b.onclick = () => select(n);
       bar.appendChild(b);
     });
-    const q = mj.motions[qs.get("motion") || "walk"] ? qs.get("motion") : "walk";
-    select(qs.get("motion") && motions.includes(qs.get("motion")) ? qs.get("motion") : "walk");
+    const want = qs.get("motion");
+    select(want && motions.includes(want) ? want : "walk");
     if (qs.get("paused") === "1") { playing = false; document.getElementById("play").textContent = "▶ 播放"; }
-    if (qs.get("frame")) { idx = Math.min(+qs.get("frame"), manifest.motions[cur].frames - 1); }
-    if (qs.get("zoom")) document.getElementById("zoom").value = qs.get("zoom");
+    if (qs.get("frame")) { idx = Math.min(+qs.get("frame"), getMotions()[cur].frames - 1); }
     draw();
-    fetch(`./${cls}/client_contract/qc_summary.json`).then(r => r.ok ? r.json() : null)
-      .then(q => { if (q) document.getElementById("qc").textContent = "契约 QC：\n" + JSON.stringify(q, null, 1); })
-      .catch(() => {});
-    requestAnimationFrame(tick);
   });
+}
+
+fetch(`./${cls}/assets/manifest.json`).then(r => r.json()).then(mj => {
+  manifest = mj;
+  const dirs = manifest.directions ? Object.keys(manifest.directions) : ["right"];
+  buildDirButtons(dirs);
+  const wantDir = qs.get("direction");
+  loadDir(wantDir && dirs.includes(wantDir) ? wantDir : dirs[0]);
+  fetch(`./${cls}/client_contract/qc_summary.json`).then(r => r.ok ? r.json() : null)
+    .then(q => { if (q) document.getElementById("qc").textContent = "契约 QC：\n" + JSON.stringify(q, null, 1); })
+    .catch(() => {});
+  requestAnimationFrame(tick);
 });
 document.getElementById("play").onclick = e => {
   playing = !playing; last = 0;
   e.target.textContent = playing ? "⏸ 暂停" : "▶ 播放";
-  if (playing && idx >= manifest.motions[cur].frames - 1 && !manifest.motions[cur].loop) idx = 0;
+  if (playing && idx >= getMotions()[cur].frames - 1 && !getMotions()[cur].loop) idx = 0;
 };
 document.getElementById("scrub").oninput = e => { idx = +e.target.value; playing = false; document.getElementById("play").textContent = "▶ 播放"; draw(); };
 document.getElementById("zoom").onchange = draw;
@@ -139,8 +169,8 @@ document.getElementById("ghost").onchange = draw;
 document.getElementById("baseline").onchange = draw;
 addEventListener("keydown", e => {
   if (e.key === " ") { e.preventDefault(); document.getElementById("play").click(); }
-  if (e.key === "ArrowLeft") { idx = (idx - 1 + manifest.motions[cur].frames) % manifest.motions[cur].frames; playing = false; draw(); }
-  if (e.key === "ArrowRight") { idx = (idx + 1) % manifest.motions[cur].frames; playing = false; draw(); }
+  if (e.key === "ArrowLeft") { idx = (idx - 1 + getMotions()[cur].frames) % getMotions()[cur].frames; playing = false; draw(); }
+  if (e.key === "ArrowRight") { idx = (idx + 1) % getMotions()[cur].frames; playing = false; draw(); }
 });
 </script>
 </body>
