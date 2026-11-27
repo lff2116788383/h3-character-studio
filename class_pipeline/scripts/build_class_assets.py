@@ -66,6 +66,13 @@ def matte_cell(cell: Image.Image) -> Image.Image | None:
     # 前景内部, 边缘带 despill 够不着)。判定 r、b 同高且 g 显著低 = 品红系;
     # 红腰带/流苏 b 低不受影响。
     alpha = cv2.erode(alpha, np.ones((3, 3), np.uint8), iterations=1)
+    # v3.1: 腐蚀会把原本细桥连接的脏边碎块切成孤岛(悬空白点), 二次连通域过滤
+    n2, labels2, stats2, _ = cv2.connectedComponentsWithStats(alpha, connectivity=8)
+    if n2 > 1:
+        min_area = max(25, int(0.0004 * alpha.size))
+        for i in range(1, n2):
+            if stats2[i, cv2.CC_STAT_AREA] < min_area:
+                alpha[labels2 == i] = 0
     fg = alpha > 0
     r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
     r2 = (r + b) / 2
