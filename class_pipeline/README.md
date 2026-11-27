@@ -25,30 +25,48 @@ class_pipeline/
 ├── README.md                  # 本文档
 ├── .gitignore                 # 排除 .secret-ui.env / __pycache__
 ├── .secret-ui.env             # 生图密钥(自包含, 绝不入库)
-├── scripts/
+├── preview.html               # Step5 播放验证器(方向切换/动作切换/逐帧 scrub/洋葱皮/脚底线)
+├── docs/
+│   └── multi_clip_proposal.md # 客户端多 clip 支持立项文档(schema v2 提案)
+├── scripts/                   # 工具链(13 个, 各步用法见 §4)
 │   ├── gpt_client.py          # 生图客户端(自包含; 密钥: 环境变量 > 向上找 .secret-ui.env)
-│   ├── common.py              # 公共工具副本: 切片/品红抠底+despill/脚底对齐 (SIZE=256, PIVOT=128,240)
-│   ├── gen_all_in_one.py      # Step2 一锅出全动作 sheet(8×8=64格, 每行一动作)
-│   ├── gen_row.py             # Step2b 缺格补行(单行 8 格横条)
-│   ├── gen_sheets.py          # 备用: 旧链式逐动作生成(27帧×4张, 上/下方向备选)
-│   ├── qc_sheet.py            # Step3 QC: 空格检测/行内 IoU/脚底差/行条拼图
-│   └── build_class_assets.py  # Step4 切格→抠底→脚底对齐→每动作透明 sheet+manifest
+│   ├── gen_all_in_one.py      # Step2 一锅出 64 格(--transparent --facing right/up/down)
+│   ├── gen_row.py             # Step2b 补行(--transparent --facing, 透明补行条)
+│   ├── gen_master_turn.py     # Step1b 母版转向(up/down, 四方向前置)
+│   ├── build_transparent_assets.py  # Step4t 主路径: 透明 sheet → 资产+manifest v2(--direction)
+│   ├── build_class_assets.py  # 品红链 fallback(§9.3 转正后降级)
+│   ├── qc_sheet.py / common.py      # QC 与公共工具(品红链配套)
+│   ├── export_client_contract.py    # Step4b 契约导出(多方向, crescent 兼容)
+│   ├── normals.py / geometry_preview.py  # 法线/材质渲染与标注预览
+│   ├── probe_transparent.py   # 透明直出探针(§9.2, 一次性验证工具)
+│   └── gen_sheets.py          # 备用: 旧链式逐动作生成(已弃用)
 └── swordsman/                 # 每职业一个目录（新职业复制此结构）
-    ├── portraits/             # Step0 定稿立绘(两形态: 斗笠/摘笠, 身份锚点)
-    │   ├── lihui_hat.png
-    │   └── lihui_ponytail.png
-    ├── masters/               # Step1 母版(品红底单帧 sprite)
-    │   ├── walk_master.png    # 行走 contact 帧
-    │   └── attack_master.png  # 劈砍中段帧
-    ├── sheets/                # Step2 生成产物(花真金白银, 全部入库)
-    │   ├── all_in_one_v1.png          # 64 格全动作一锅出
-    │   ├── attack2_row_fix.png        # 缺格补行条
-    │   ├── all_in_one_rows.png        # QC 行条拼图
-    │   └── qc/                        # QC 报告/放大图
-    └── assets/                # Step4 最终资产(build_class_assets 生成)
-        ├── walk.png / idle.png / ...   # 每动作 8 格透明底 sheet
-        └── manifest.json               # schema=class-assets-v1
+    ├── portraits/             # Step0 定稿立绘(两形态: 斗笠/摘马尾, 身份锚点)
+    ├── masters/               # Step1 透明母版 ×6 (walk/attack × right/up/down)
+    ├── sheets/                # Step2 生成产物(源 sheet+QC, 全部入库)
+    │   ├── all_in_one_transparent[_<dir>]_v<n>.png    # ★64 格源 sheet(资产从这里切)
+    │   ├── <motion>_row_fix_transparent[_<dir>]_v<n>.png  # 补行条
+    │   ├── transparent_rows_*.png                     # QC 行条目检图
+    │   └── transparent_qc_*.json                      # QC 报告
+    ├── assets/                # Step4 最终资产(manifest v2, 产线内部格式)
+    │   ├── manifest.json      # class-assets-v2: directions.<d>.motions 聚合
+    │   └── right|up|down/<motion>.png  # 每动作 8 格透明条
+    ├── client_contract/       # ★★ 客户端唯一需要消费的目录(整体 drop-in)
+    │   ├── character.json     # v2: crescent 兼容键 + 三方向 directions + motions 扩展键
+    │   ├── right|up|down/     # 各方向 walk drop-in(animation.json+atlas.png+frames/)
+    │   ├── motions/<m>/       # right 全动作扩展 clip
+    │   ├── motions/<d>/<m>/   # up/down 全动作扩展 clip
+    │   └── qc_summary.json    # 全 clip QC 汇总
+    └── normals/               # 法线/材质验证产物(geometry v2.2 渲染)
 ```
+
+**客户端实际消费的最小集合 = `client_contract/` 整目录**（drop-in 设计, 拷走即用）:
+`character.json` 提供方向/ idle_frame/pivot/pixel_size; 每方向 `animation.json`
+只被读取 atlas / frames[].region / frames[].duration_ms 三个字段（crescent 同款）,
+atlas.png 是帧图。其余目录全部是**产线内部物料**: portraits/masters/sheets/
+assets/ 是生成与 QC 的源料链（复现/续作需要, 客户端不需要）; normals/ 是光照
+验证实验。接入顺序: 先接 `right/animation.json`（单 clip 即可跑通）, 多 clip
+与 up/down 切换按 docs/multi_clip_proposal.md 立项。
 
 ## 3. 环境事实
 
@@ -70,9 +88,10 @@ Step2 一锅出 scripts/gen_all_in_one.py --transparent
       → sheets/all_in_one_transparent_v<n>.png（64格 8×8, 每行一动作, 真 RGBA 直出免抠图;
       品红链 build_class_assets.py 降级为 fallback, background 参数失败时才启用）
 Step3 QC: build_transparent_assets.py 内置 alpha 直读 QC（空格/相邻IoU/循环闭合/脚底差）;
-      缺格行 gen_row.py 补行（注意: gen_row 尚未加 --transparent, 需要时先移植）
-Step4 资产 scripts/build_transparent_assets.py --sheet <透明sheet>
-      → assets/<motion>.png(原生抗锯齿透明底) + manifest.json
+      缺格行 gen_row.py --transparent [--facing up|down] 补行,
+      **补行条必须目检后才 build**（QC 数字会骗人, 见 §11#1 死帧假象）
+Step4 资产 scripts/build_transparent_assets.py --sheet <透明sheet> [--direction right|up|down]
+      → assets/<direction>/<motion>.png(原生抗锯齿透明底) + manifest.json(v2 聚合)
 Step5 验证: preview.html 逐动作播放目检（帧序列/脚底/循环闭合）
 Step6 四方向: left=right 镜像(免费); up/down 各跑一轮
       gen_master_turn.py(转向母版×2) → Step2 --facing up|down → Step4
