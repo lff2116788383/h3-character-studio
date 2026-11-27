@@ -43,16 +43,18 @@ def clean_cell(cell: Image.Image) -> Image.Image:
     return Image.fromarray(arr, "RGBA")
 
 
-def apply_row_fixes(cd: Path, rows: dict, cw: int) -> dict:
-    """补行条整行替换(取最新 <motion>_row_fix_transparent_v*.png)。
+def apply_row_fixes(cd: Path, rows: dict, cw: int, direction: str = "right") -> dict:
+    """补行条整行替换(取最新 <motion>_row_fix_transparent[_<direction>]_v*.png)。
 
     透明原生做法: alpha 内容带裁上下空白 → 等比缩放到主 sheet 宽度 → 切 8 格。
     替换后帧高可与主 sheet 不同, 脚底对齐统一交给 align_frames, 无需手工补齐。
     (对应品红链 build_class_assets.load_sheet_rows 的 row_fix 逻辑, 透明版免背景估计)
+    方向匹配: right 补行条无后缀, up/down 带方向后缀(与 gen_row --facing 命名一致)。
     """
     for motion in list(rows):
-        fixes = sorted(cd.glob(f"sheets/{motion}_row_fix_transparent_v*.png"),
-                       key=lambda p: p.stat().st_mtime)
+        pattern = (f"sheets/{motion}_row_fix_transparent_v*.png" if direction == "right"
+                   else f"sheets/{motion}_row_fix_transparent_{direction}_v*.png")
+        fixes = sorted(cd.glob(pattern), key=lambda p: p.stat().st_mtime)
         if not fixes:
             continue
         fix = Image.open(fixes[-1]).convert("RGBA")
@@ -112,7 +114,7 @@ def main() -> int:
     for r, motion in enumerate(ROW_LAYOUT):
         rows[motion] = [clean_cell(img.crop((c * cw, r * ch, (c + 1) * cw, (r + 1) * ch)))
                         for c in range(COLS)]
-    rows = apply_row_fixes(cd, rows, cw)
+    rows = apply_row_fixes(cd, rows, cw, direction)
 
     # 行条拼图(透明底贴深灰底便于目检; 补行替换后帧高可不同, 统一缩到主行高)
     preview = Image.new("RGB", (COLS * cw, len(ROW_LAYOUT) * (ch + 4)), (24, 26, 30))

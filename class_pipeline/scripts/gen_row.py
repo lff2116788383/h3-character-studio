@@ -41,6 +41,20 @@ IDENTITY = (
     "清晰轮廓 cel shading，面朝画面右侧三四分之三视角，同比例同脚底水平线。"
 )
 
+IDENTITY_TAIL = {
+    "right": "清晰轮廓 cel shading，面朝画面右侧三四分之三视角，同比例同脚底水平线。",
+    "up": "清晰轮廓 cel shading，背面视角面朝画面深处远离观众（看到背部，看不到脸），同比例同脚底水平线。",
+    "down": "清晰轮廓 cel shading，正面视角面朝观众（完整正脸），同比例同脚底水平线。",
+}
+
+# run 行逐格姿势（8 帧两步循环, 首尾闭合）
+POSES["run"] = (
+    "跑步循环逐格姿势：第1格右脚前触地左臂前摆身体明显前倾；第2格重心前压右腿蹬地双足离地腾空；"
+    "第3格腾空前滑左腿前抬右臂后摆；第4格左脚前触地右臂前摆左臂后摆；"
+    "第5格重心前压左腿蹬地腾空；第6格腾空前滑右腿前抬；"
+    "第7格右脚前触地姿势回到与第1格一致；第8格与第1格完全相同闭合循环"
+)
+
 _PROMPT_BG = {
     "magenta": (
         "格子上下留纯品红 #ff00ff 空白，背景全为纯品红 #ff00ff，"
@@ -54,12 +68,13 @@ _PROMPT_BG = {
 }
 
 
-def build_prompt(motion: str, poses: str, sheet: Path, transparent: bool) -> str:
+def build_prompt(motion: str, poses: str, sheet: Path, transparent: bool, facing: str) -> str:
     bg = _PROMPT_BG["transparent" if transparent else "magenta"]
     return (
         f"一张单行 8 格横条 sprite 动作表（8列×1行），水平居中排列在画面中部，"
         f"每格一个全身角色，{bg}"
         f"角色与画风严格同第一张参考图（全动作总表）中{motion}行的风格与配色：{IDENTITY}"
+        f"{IDENTITY_TAIL[facing]}"
         f"动作={poses}。第二张参考图是该动作的母版姿势参考。"
         f"（当前 sheet: {sheet.name}）"
     )
@@ -68,34 +83,46 @@ def build_prompt(motion: str, poses: str, sheet: Path, transparent: bool) -> str
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--class-dir", required=True, type=Path)
-    ap.add_argument("--motion", required=True, help="动作名, 如 attack2")
+    ap.add_argument("--motion", required=True, help="动作名, 如 attack2/run")
     ap.add_argument("--poses", help="8 格逐格姿势描述; 缺省用内置 POSES 表或动作整段描述")
     ap.add_argument("--transparent", action="store_true",
                     help="透明直出(真 RGBA, 免抠图); 自动匹配透明主 sheet, "
-                         "输出命名 <motion>_row_fix_transparent_v<n>.png")
-    ap.add_argument("--sheet", type=Path, help="被修的大 sheet; 默认 sheets/ 下最新同底型 all_in_one*")
-    ap.add_argument("--attack-master", type=Path, help="姿势参考; 默认 masters/attack_master.png")
-    ap.add_argument("--version", type=int, default=1, help="输出命名 <motion>_row_fix[_transparent]_v<n>.png")
+                         "输出命名 <motion>_row_fix_transparent[_<facing>]_v<n>.png")
+    ap.add_argument("--facing", choices=["right", "up", "down"], default="right",
+                    help="朝向(补 up/down 方向 sheet 时必传); 默认 right")
+    ap.add_argument("--sheet", type=Path, help="被修的大 sheet; 默认 sheets/ 下最新同底型同朝向 all_in_one*")
+    ap.add_argument("--attack-master", type=Path, help="姿势参考; 默认 masters/attack_master[_<facing>].png")
+    ap.add_argument("--version", type=int, default=1, help="输出命名 <motion>_row_fix[_transparent][_facing]_v<n>.png")
     args = ap.parse_args()
 
     cd = args.class_dir
+    facing = args.facing
     if args.sheet:
         sheet = args.sheet
-    else:
-        pattern = "sheets/all_in_one_transparent_v*.png" if args.transparent else "sheets/all_in_one_v*.png"
+    elif args.transparent:
+        pattern = ("sheets/all_in_one_transparent_v*.png" if facing == "right"
+                   else f"sheets/all_in_one_transparent_{facing}_v*.png")
         cands = list(cd.glob(pattern))
         if not cands:
             raise SystemExit(f"找不到主 sheet({pattern}); 可用 --sheet 指定")
         sheet = max(cands, key=lambda p: p.stat().st_mtime)
-    attack_master = args.attack_master or cd / "masters" / "attack_master.png"
+    else:
+        cands = list(cd.glob("sheets/all_in_one_v*.png"))
+        if not cands:
+            raise SystemExit("找不到品红主 sheet; 可用 --sheet 指定")
+        sheet = max(cands, key=lambda p: p.stat().st_mtime)
+    master_name = "attack_master.png" if facing == "right" else f"attack_master_{facing}.png"
+    attack_master = args.attack_master or cd / "masters" / master_name
     for ref in (sheet, attack_master):
         if not ref.exists():
             raise SystemExit(f"缺少参考图: {ref}")
 
     poses = args.poses or POSES.get(args.motion, f"{args.motion} 完整 8 格动作循环，首尾闭合")
     tag = "row_fix_transparent" if args.transparent else "row_fix"
+    if args.transparent and facing != "right":
+        tag += f"_{facing}"
     out = cd / "sheets" / f"{args.motion}_{tag}_v{args.version}.png"
-    generate_img2img(build_prompt(args.motion, poses, sheet, args.transparent),
+    generate_img2img(build_prompt(args.motion, poses, sheet, args.transparent, facing),
                      [sheet, attack_master], out, size=SIZE, transparent=args.transparent)
     print(f"[done] {out}")
     if args.transparent:
