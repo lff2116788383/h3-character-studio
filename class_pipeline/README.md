@@ -183,6 +183,18 @@ Step6 四方向: left=right 镜像(免费); up/down 各跑一轮 Step2-5(每方�
   `swordsman/geometry.yaml`（归一化空间手写标注）: 背刀刃 metal mask 命中准确,
   斗笠/躯干/腿方向明暗成立; 发梢/手臂管件待目检迭代。
 
+### 9.2 透明底探针（2026-11-27, 推翻产线根基假设）
+
+`scripts/probe_transparent.py` 用 `background=transparent` + `output_format=png`
+实测 proxy 的 gpt-image-2: **支持透明直出**。HTTP 200, 返回真 RGBA
+（全透明 73.6% / 不透明 24.9% / 半透明 1.4% 真抗锯齿边）, 无棋盘格
+（透明区亮度 0.2）, 无品红, 角色保真完整。产物 `sheets/transparent_probe/`。
+
+结论: 品红+抠图链建立时假设"API 出不了透明底"——**该假设未经验证且已被证伪**。
+透明直出可消掉 matte/despill/腐蚀/清岛整条链。切换前待验证:
+①透明底 64 格一锅出的一致性与 QC 兼容性 ②1536 大图下参数稳定性 ③多轮抽卡表现。
+在上述验证通过前, 品红链保持现役; 通过后透明直出转正、品红降级 fallback。
+
 ## 10. 风格基准与渲染配方（2026-11-27 拍板, 假像素路线）
 
 ### 10.1 客户端渲染事实（hd2d-mmo 实测源码）
