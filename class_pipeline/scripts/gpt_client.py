@@ -59,9 +59,12 @@ def _download(payload: dict, proxies) -> bytes:
     return response.content
 
 
-def generate_img2img(prompt: str, ref_paths: list, out_path: Path, size: str = "1536x1536") -> Path:
+def generate_img2img(prompt: str, ref_paths: list, out_path: Path, size: str = "1536x1536",
+                     transparent: bool = False) -> Path:
     """图生图(edits): 多参考图 + prompt → PNG。失败重试 3 次(第 2 次起走本地代理)。
 
+    transparent=True 时追加 background=transparent + output_format=png,
+    API 返回真 RGBA(2026-11-27 探针实测通过, 见 README §9.2)。
     幂等: out_path 已存在则直接返回(重跑安全)。抽卡时手动删产物重跑。
     """
     out_path = Path(out_path)
@@ -74,6 +77,9 @@ def generate_img2img(prompt: str, ref_paths: list, out_path: Path, size: str = "
         mime = "image/png" if p.suffix.lower() == ".png" else "image/jpeg"
         multipart.append(("image[]", (p.name, p.read_bytes(), mime)))
     data = {"model": MODEL, "prompt": prompt, "size": size, "n": "1"}
+    if transparent:
+        data["background"] = "transparent"
+        data["output_format"] = "png"
     last_error = ""
     for attempt in range(3):
         proxies = None if attempt == 0 else {"https": "http://127.0.0.1:7897"}

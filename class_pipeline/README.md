@@ -64,11 +64,16 @@ class_pipeline/
 
 ```
 Step0 定稿立绘 portraits/（斗笠+摘笠两形态, 身份锚点, 后续所有生成的参考图）
-Step1 母版 masters/（品红 #ff00ff 底单帧 sprite: walk contact 帧 + attack 中段帧）
-Step2 一锅出 scripts/gen_all_in_one.py → sheets/all_in_one_v<n>.png（64格 8×8, 每行一动作）
-Step3 QC scripts/qc_sheet.py → 空格/IoU/脚底差报告; 缺格行 scripts/gen_row.py 补行
-Step4 资产 scripts/build_class_assets.py → assets/<motion>.png(透明底) + manifest.json
-Step5 验证: manifest 喂预览页/纸娃娃工具逐动作播放目检（帧序列/脚底/循环闭合）
+Step1 母版 masters/（透明底单帧 sprite: walk contact 帧 + attack 中段帧;
+      由品红母版经探针法重绘转正, 见 §9.2）
+Step2 一锅出 scripts/gen_all_in_one.py --transparent
+      → sheets/all_in_one_transparent_v<n>.png（64格 8×8, 每行一动作, 真 RGBA 直出免抠图;
+      品红链 build_class_assets.py 降级为 fallback, background 参数失败时才启用）
+Step3 QC: build_transparent_assets.py 内置 alpha 直读 QC（空格/相邻IoU/循环闭合/脚底差）;
+      缺格行 gen_row.py 补行（注意: gen_row 尚未加 --transparent, 需要时先移植）
+Step4 资产 scripts/build_transparent_assets.py --sheet <透明sheet>
+      → assets/<motion>.png(原生抗锯齿透明底) + manifest.json
+Step5 验证: preview.html 逐动作播放目检（帧序列/脚底/循环闭合）
 Step6 四方向: left=right 镜像(免费); up/down 各跑一轮 Step2-5(每方向独立一锅)
 ```
 
@@ -119,7 +124,7 @@ Step6 四方向: left=right 镜像(免费); up/down 各跑一轮 Step2-5(每方�
 
 | 约定 | 内容 |
 |---|---|
-| sheet 布局 | 恒定 8列×8行(一锅) 或 8列×1行(补行), 品红 #ff00ff 底, 无边框无文字无阴影; cell 内 y 向下 |
+| sheet 布局 | 恒定 8列×8行(一锅) 或 8列×1行(补行), **透明底(默认, 原生 RGBA)** 或 品红 #ff00ff 底(fallback); 无边框无文字无阴影; cell 内 y 向下 |
 | 角色契约 | 所有生成 prompt 必须复述：服装/配色/背剑/葫芦/斗笠/马尾 + "严禁腰间横挂剑鞘"（曾反复跑偏） |
 | 母版规格 | 品红底单帧全身, right 向 3/4 视角, walk=contact 姿势, attack=动作中段 |
 | 行分配 | 行号即动作（ROW_LAYOUT）, 上=walk 下=spare 固定顺序, 新职业不改顺序只改描述 |
@@ -195,6 +200,23 @@ Step6 四方向: left=right 镜像(免费); up/down 各跑一轮 Step2-5(每方�
 ①透明底 64 格一锅出的一致性与 QC 兼容性 ②1536 大图下参数稳定性 ③多轮抽卡表现。
 在上述验证通过前, 品红链保持现役; 通过后透明直出转正、品红降级 fallback。
 
+
+### 9.3 透明直出转正（2026-11-27 晚, 64 格一锅验证通过）
+
+透明底 64 格一锅出 ×2 抽卡（各 0.09 元）实测对比:
+
+| 指标 | 品红链(旧) | 透明直出 v1(新, 已转正) |
+|---|---|---|
+| 空格 | attack2 c3 跳格, 需补行 +1 张 | **零空格, 7 动作一次全成** |
+| attack2 行内 IoU | 0.39~0.41 | **0.833** |
+| run 循环闭合 | 0.557(老大难) | **0.681** |
+| 边缘质量 | 抠图三道工序仍留 halo/白点隐患 | **原生抗锯齿, halo/白点类 bug 从根上消失** |
+| 工序 | matte→despill→腐蚀→清岛 | alpha<10 归零 + 清孤岛两步 |
+
+v1 转正为现役资产（assets/ + client_contract/ 已全量重建, preview 复验通过）;
+v2 留档为抽卡对照。品红产物（all_in_one_v1.png / attack2_row_fix.png / 行条 / qc/
+/ 品红母版）已删除, git 历史可考。品红链代码（build_class_assets.py / qc_sheet.py
+/ gen_row.py）保留为 fallback, **gen_row.py 尚未加 --transparent, 补行前需先移植**。
 ## 10. 风格基准与渲染配方（2026-11-27 拍板, 假像素路线）
 
 ### 10.1 客户端渲染事实（hd2d-mmo 实测源码）
@@ -231,8 +253,8 @@ Step6 四方向: left=right 镜像(免费); up/down 各跑一轮 Step2-5(每方�
 
 ## 11. TODO（接手从这里开始）
 
-1. **run 行循环闭合补行**: f7 相位与 f0 不接（0.557）, 用 `scripts/gen_row.py`
-   出 run 行补条（约 0.09 元）后重跑 build_class_assets + export_client_contract。
+1. **run 行循环闭合**（可选优化）: 透明 reroll 已从 0.557 改善到 0.681（契约口径
+   0.584）; 如需进一步修, 先给 `gen_row.py` 加 `--transparent` 再出 run 补行条。
 2. Step5 播放验证已完成（2026-11-27, 见 §9.1; 顺带修复 halo 缺陷, 见 §8.6）。
 3. 放大策略拍板: **特写场景用大格子重生成（4 列×8 行 → cell 384px, 代价是动作分
    多张）, 禁止放大 192 原生图**; 日常走场维持原生 192（屏显 ~110px, 1.4× 余量够用）。

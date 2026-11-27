@@ -30,11 +30,11 @@ ROW_LAYOUT = [
     ("attack2", "突刺攻击一次性，收剑于腰侧→向右水平直刺剑刃朝前→收剑"),
     ("death", "死亡一次性，受击后仰→踉跄后退→腿软倒地→末格平躺地面姿势"),
     ("run", "跑步循环，比行走幅度更大身体前倾双臂大幅摆动"),
-    ("hit", "受击，前3格身体后仰缩肩捂胸，其余格子保持纯品红空"),
-    ("spare", "整行全部保持纯品红空格子"),
+    ("hit", "受击，前3格身体后仰缩肩捂胸，其余格子保持完全透明空"),
+    ("spare", "整行全部保持完全透明空格子"),
 ]
 
-PROMPT_HEAD = (
+PROMPT_HEAD_MAGENTA = (
     "游戏 sprite 全动作总表，一张图内 {cols}列×{rows}行共{total}个等大格子紧密排列"
     "无缝隙无间隙，每格内一个完整全身角色，纯色品红 #ff00ff 背景填满所有格子间空隙，"
     "无格线无文字无标号无阴影无地面。角色与画风严格同参考图：赭棕短打劲装、藏青短披风、"
@@ -43,9 +43,20 @@ PROMPT_HEAD = (
     "面朝画面右侧的正面三四分之三视角，斗笠形态。各行动作（从上到下）："
 )
 
+PROMPT_HEAD_TRANSPARENT = (
+    "游戏 sprite 全动作总表，一张图内 {cols}列×{rows}行共{total}个等大格子紧密排列"
+    "无缝隙无间隙，每格内一个完整全身角色，背景完全透明（alpha 全 0），"
+    "严禁品红色、严禁棋盘格纹理、严禁任何背景元素、无格线无文字无标号无阴影无地面。"
+    "角色与画风严格同参考图：赭棕短打劲装、藏青短披风、"
+    "腰间只挂络绳酒葫芦、黑鞘长剑背在背后剑柄露左肩垂青穗、深棕宽檐斗笠、黑色高单马尾，"
+    "清晰轮廓 cel shading，严禁腰间出现任何横挂的剑或剑鞘。所有格子角色同比例同脚底水平线，"
+    "面朝画面右侧的正面三四分之三视角，斗笠形态。各行动作（从上到下）："
+)
 
-def build_prompt() -> str:
-    lines = [PROMPT_HEAD.format(cols=COLS, rows=ROWS, total=COLS * ROWS)]
+
+def build_prompt(transparent: bool = False) -> str:
+    head = PROMPT_HEAD_TRANSPARENT if transparent else PROMPT_HEAD_MAGENTA
+    lines = [head.format(cols=COLS, rows=ROWS, total=COLS * ROWS)]
     for i, (motion, desc) in enumerate(ROW_LAYOUT, 1):
         lines.append(f"第{i}行{COLS}格={desc}；")
     return "".join(lines)
@@ -59,20 +70,27 @@ def main() -> int:
     ap.add_argument("--attack-master", type=Path, help="默认 masters/attack_master.png")
     ap.add_argument("--out", type=Path, help="输出 sheet; 默认 sheets/all_in_one_v{n}.png")
     ap.add_argument("--version", type=int, default=1, help="抽卡版本号, 命名 all_in_one_v<n>.png")
+    ap.add_argument("--transparent", action="store_true",
+                    help="透明直出(background=transparent, 真 RGBA, 免抠图); "
+                         "输出命名 all_in_one_transparent_v<n>.png")
     args = ap.parse_args()
 
     cd = args.class_dir
     portrait = args.portrait or cd / "portraits" / "lihui_hat.png"
     walk_master = args.walk_master or cd / "masters" / "walk_master.png"
     attack_master = args.attack_master or cd / "masters" / "attack_master.png"
-    out = args.out or cd / "sheets" / f"all_in_one_v{args.version}.png"
+    if args.transparent:
+        out = args.out or cd / "sheets" / f"all_in_one_transparent_v{args.version}.png"
+    else:
+        out = args.out or cd / "sheets" / f"all_in_one_v{args.version}.png"
 
     for ref in (portrait, walk_master, attack_master):
         if not ref.exists():
             raise SystemExit(f"缺少参考图: {ref}")
 
-    prompt = build_prompt()
-    generate_img2img(prompt, [portrait, walk_master, attack_master], out, size=SIZE)
+    prompt = build_prompt(transparent=args.transparent)
+    generate_img2img(prompt, [portrait, walk_master, attack_master], out,
+                     size=SIZE, transparent=args.transparent)
     print(f"[done] {out}\n[prompt 长度] {len(prompt)} 字")
     print("[next] python qc_sheet.py --sheet <out> 检查空格/序列, 缺格行用 gen_row.py 补")
     return 0

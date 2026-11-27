@@ -1,0 +1,152 @@
+{
+ "walk": {
+  "coverage": [
+   0.292,
+   0.273,
+   0.28,
+   0.275,
+   0.267,
+   0.269,
+   0.271,
+   0.281
+  ],
+  "empty_cells": [],
+  "adjacent_iou": [
+   0.809,
+   0.829,
+   0.813,
+   0.841,
+   0.898,
+   0.873,
+   0.861
+  ],
+  "adjacent_iou_mean": 0.846,
+  "loop_closure_iou": 0.722,
+  "foot_spread_px": 6
+ },
+ "idle": {
+  "coverage": [
+   0.262,
+   0.255,
+   0.255,
+   0.255,
+   0.254,
+   0.251,
+   0.254,
+   0.255
+  ],
+  "empty_cells": [],
+  "adjacent_iou": [
+   0.932,
+   0.953,
+   0.912,
+   0.946,
+   0.925,
+   0.923,
+   0.948
+  ],
+  "adjacent_iou_mean": 0.934,
+  "loop_closure_iou": 0.922,
+  "foot_spread_px": 0
+ },
+ "attack1": {
+  "coverage": [
+   0.271,
+   0.264,
+   0.266,
+   0.274,
+   0.255,
+   0.267,
+   0.258,
+   0.268
+  ],
+  "empty_cells": [],
+  "adjacent_iou": [
+   0.772,
+   0.955,
+   0.669,
+   0.674,
+   0.734,
+   0.522,
+   0.787
+  ],
+  "adjacent_iou_mean": 0.73,
+  "loop_closure_iou": 0.735,
+  "foot_spread_px": 8
+ },
+ "attack2": {
+  "coverage": [
+   0.271,
+   0.269,
+   0.265,
+   0.258,
+   0.26,
+   0.271,
+   0.26,
+   0.264
+  ],
+  "empty_cells": [],
+  "adjacent_iou": [
+   0.929,
+   0.739,
+   0.88,
+   0.894,
+   0.847,
+   0.628,
+   0.914
+  ],
+  "adjacent_iou_mean": 0.833,
+  "loop_closure_iou": 0.84,
+  "foot_spread_px": 7
+ },
+ "death": {
+  "coverage": [
+   0.278,
+   0.261,
+   0.215,
+   0.191,
+   0.169,
+   0.137,
+   0.124,
+   0.127
+  ],
+  "empty_cells": [],
+  "adjacent_iou": [
+   0.872,
+   0.461,
+   0.551,
+   0.568,
+   0.66,
+   0.762,
+   0.95
+  ],
+  "adjacent_iou_mean": 0.689,
+  "loop_closure_iou": 0.068,
+  "foot_spread_px": 6
+ },
+ "run": {
+  "coverage": [
+   0.27,
+   0.251,
+   0.27,
+   0.266,
+   0.262,
+   0.244,
+   0.253,
+   0.255
+  ],
+  "empty_cells": [],
+  "adjacent_iou": [
+   0.759,
+   0.818,
+   0.795,
+   0.761,
+   0.705,
+   0.755,
+   0.76
+  ],
+  "adjacent_iou_mean": 0.765,
+  "loop_closure_iou": 0.681,
+  "foot_spread_px": 12
+ }
+}

@@ -1,6 +1,8 @@
 {
  "schema": "class-assets-v1",
  "class": "swordsman",
+ "source_sheet": "all_in_one_transparent_v2.png",
+ "pipeline": "transparent-native",
  "motions": {
   "walk": {
    "sheet": "walk.png",

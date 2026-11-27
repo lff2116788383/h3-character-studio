@@ -1,32 +1,32 @@
 {
  "right": {
-  "adjacent_iou_mean": 0.78,
-  "adjacent_iou_min": 0.728,
-  "loop_closure_iou": 0.956
+  "adjacent_iou_mean": 0.751,
+  "adjacent_iou_min": 0.615,
+  "loop_closure_iou": 0.827
  },
  "motions\\attack1": {
-  "adjacent_iou_mean": 0.591,
-  "adjacent_iou_min": 0.492,
-  "loop_closure_iou": 0.942
+  "adjacent_iou_mean": 0.615,
+  "adjacent_iou_min": 0.37,
+  "loop_closure_iou": 0.874
  },
  "motions\\attack2": {
-  "adjacent_iou_mean": 0.389,
-  "adjacent_iou_min": 0.062,
-  "loop_closure_iou": 0.953
+  "adjacent_iou_mean": 0.602,
+  "adjacent_iou_min": 0.46,
+  "loop_closure_iou": 0.852
  },
  "motions\\death": {
-  "adjacent_iou_mean": 0.578,
-  "adjacent_iou_min": 0.441,
-  "loop_closure_iou": 0.066
+  "adjacent_iou_mean": 0.644,
+  "adjacent_iou_min": 0.353,
+  "loop_closure_iou": 0.055
  },
  "motions\\idle": {
-  "adjacent_iou_mean": 0.955,
-  "adjacent_iou_min": 0.928,
-  "loop_closure_iou": 0.973
+  "adjacent_iou_mean": 0.913,
+  "adjacent_iou_min": 0.894,
+  "loop_closure_iou": 0.862
  },
  "motions\\run": {
-  "adjacent_iou_mean": 0.67,
-  "adjacent_iou_min": 0.571,
-  "loop_closure_iou": 0.557
+  "adjacent_iou_mean": 0.728,
+  "adjacent_iou_min": 0.553,
+  "loop_closure_iou": 0.584
  }
 }

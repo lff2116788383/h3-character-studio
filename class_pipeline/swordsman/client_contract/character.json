@@ -15,7 +15,7 @@
  "directions": {
   "right": {
    "manifest": "right/animation.json",
-   "idle_frame": 3,
+   "idle_frame": 2,
    "generation": "class-pipeline-gpt"
   }
  },

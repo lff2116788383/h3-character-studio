@@ -1,5 +1,5 @@
 {
- "adjacent_iou_mean": 0.389,
- "adjacent_iou_min": 0.062,
- "loop_closure_iou": 0.953
+ "adjacent_iou_mean": 0.602,
+ "adjacent_iou_min": 0.46,
+ "loop_closure_iou": 0.852
 }
