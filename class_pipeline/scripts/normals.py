@@ -28,9 +28,15 @@ def unit(v):
 
 
 def load_frame(path: Path):
-    """透明底直读 alpha; 品红底则抠底。裁 bbox → 最长边缩到 248 → 底部对齐贴回 256 画布。"""
+    """透明底直读 alpha; 品红底则抠底。裁 bbox → 最长边缩到 248 → 底部对齐贴回 256 画布。
+
+    底型判断用 alpha.min(): 透明资产帧必有 alpha=0 空白区(min=0);
+    品红母版帧全图不透明(min=255)。旧判断用 max 会把含不透明像素的
+    透明帧误判为品红底, chroma key 把透明区的黑 RGB 当前景 → 全图前景,
+    silhouette 失效(2026-11-27 发现修复)。
+    """
     img = np.asarray(Image.open(path).convert("RGBA"), dtype=np.float32)
-    if img[..., 3].max() < 250:  # 已有透明底: 直接用
+    if img[..., 3].min() < 250:  # 存在透明像素: 透明底资产, 直接用
         rgba = img
     else:  # 品红底母版: chroma key 抠底
         rgb = img[..., :3]

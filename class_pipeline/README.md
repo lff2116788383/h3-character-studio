@@ -217,6 +217,34 @@ v1 转正为现役资产（assets/ + client_contract/ 已全量重建, preview �
 v2 留档为抽卡对照。品红产物（all_in_one_v1.png / attack2_row_fix.png / 行条 / qc/
 / 品红母版）已删除, git 历史可考。品红链代码（build_class_assets.py / qc_sheet.py
 / gen_row.py）保留为 fallback, **gen_row.py 尚未加 --transparent, 补行前需先移植**。
+
+### 9.4 法线标注迭代 + load_frame 底型 bug 修复（2026-11-27 晚）
+
+目检 v1 法线渲染发现两类问题, 顺藤摸瓜修出一个产线级 bug:
+
+- **load_frame 底型误判(bug)**: 旧判断 `alpha.max() < 250` 把含不透明像素的
+  透明资产帧误判为品红底 → chroma key 把透明区的黑 RGB 当前景色 →
+  **全图前景, silhouette 失效**, 法线场实际是全图缓变场(v1 的"立体感"是假象),
+  metal 高光条才会横穿脸前。修复: 改 `alpha.min() < 250`(透明帧必有 alpha=0 区)。
+- **geometry v1 标注整体错位**: v1 按旧品红母版手标, 对透明 v1 资产帧系统性
+  偏高 12~45px, 且刀刃 poly 横穿躯干(背剑设定下剑身应被身体遮挡)。
+
+迭代方法固化为闭环工具链: **行带 alpha 分析(每 10px 扫内容 x 段)定位部件 →
+`scripts/geometry_preview.py` 部件叠加目检 → 数值化贴合率检查(mask 内 alpha
+覆盖率, 主要部件≥0.7) → normals.py 重渲染目检**。
+
+- `geometry.yaml` v2.2(站姿/walk/idle 通用): 全部件按修复后空间重标;
+  刀刃 poly 收缩为柄头可见小块; 新增披风部件。贴合率: 后臂/头脸 1.0,
+  躯干 0.98, 马尾 0.82, 腿/斗笠 0.67~0.82。
+- `geometry_attack.yaml` 新增(attack 专用, 姿态差异大): 低伏弓步+举剑劈砍
+  专用标注, 剑刃 poly 按实测斜线 (168,115)→(196,193) 重标。贴合率: 后臂 1.0,
+  头脸 0.97, 躯干 0.87, 腿 0.73~0.75。
+- 复渲染验证: light-top 穿脸白条消失, 金属高光只在柄头/刃带, 左右受光
+  差异清晰(light-left 披风面亮 / light-right 胸面+刃亮)。
+
+用法: `python normals.py <帧> swordsman/geometry.yaml <out>`(站姿帧) /
+`python normals.py <帧> swordsman/geometry_attack.yaml <out>`(攻击帧);
+预览: `python scripts/geometry_preview.py <帧> <geometry.yaml> <out.png>`。
 ## 10. 风格基准与渲染配方（2026-11-27 拍板, 假像素路线）
 
 ### 10.1 客户端渲染事实（hd2d-mmo 实测源码）
@@ -254,7 +282,8 @@ v2 留档为抽卡对照。品红产物（all_in_one_v1.png / attack2_row_fix.pn
 ## 11. TODO（接手从这里开始）
 
 1. **run 行循环闭合**（可选优化）: 透明 reroll 已从 0.557 改善到 0.681（契约口径
-   0.584）; 如需进一步修, 先给 `gen_row.py` 加 `--transparent` 再出 run 补行条。
+   0.584）; `gen_row.py --transparent` 已就绪, 需要时直接出 run 透明补行条
+   （build_transparent_assets 会自动整行替换）。
 2. Step5 播放验证已完成（2026-11-27, 见 §9.1; 顺带修复 halo 缺陷, 见 §8.6）。
 3. 放大策略拍板: **特写场景用大格子重生成（4 列×8 行 → cell 384px, 代价是动作分
    多张）, 禁止放大 192 原生图**; 日常走场维持原生 192（屏显 ~110px, 1.4× 余量够用）。

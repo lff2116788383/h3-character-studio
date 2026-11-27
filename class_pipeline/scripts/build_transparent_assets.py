@@ -41,6 +41,31 @@ def clean_cell(cell: Image.Image) -> Image.Image:
     return Image.fromarray(arr, "RGBA")
 
 
+def apply_row_fixes(cd: Path, rows: dict, cw: int) -> dict:
+    """补行条整行替换(取最新 <motion>_row_fix_transparent_v*.png)。
+
+    透明原生做法: alpha 内容带裁上下空白 → 等比缩放到主 sheet 宽度 → 切 8 格。
+    替换后帧高可与主 sheet 不同, 脚底对齐统一交给 align_frames, 无需手工补齐。
+    (对应品红链 build_class_assets.load_sheet_rows 的 row_fix 逻辑, 透明版免背景估计)
+    """
+    for motion in list(rows):
+        fixes = sorted(cd.glob(f"sheets/{motion}_row_fix_transparent_v*.png"),
+                       key=lambda p: p.stat().st_mtime)
+        if not fixes:
+            continue
+        fix = Image.open(fixes[-1]).convert("RGBA")
+        a = np.asarray(fix)[..., 3]
+        ys = np.nonzero((a > 10).any(axis=1))[0]
+        if len(ys):
+            fix = fix.crop((0, int(ys[0]), fix.width, int(ys[-1]) + 1))
+        s = (COLS * cw) / fix.width
+        fix = fix.resize((COLS * cw, max(1, round(fix.height * s))), Image.LANCZOS)
+        rows[motion] = [clean_cell(fix.crop((c * cw, 0, (c + 1) * cw, fix.height)))
+                        for c in range(COLS)]
+        print(f"[fix] {motion} ← {fixes[-1].name} (补行整行替换)")
+    return rows
+
+
 def qc_row(cells: list[Image.Image]) -> dict:
     """alpha 直读 QC: 覆盖率/空格/相邻 IoU/循环闭合/脚底差。"""
     masks = [np.asarray(c)[..., 3] > 128 for c in cells]
@@ -82,12 +107,17 @@ def main() -> int:
     for r, motion in enumerate(ROW_LAYOUT):
         rows[motion] = [clean_cell(img.crop((c * cw, r * ch, (c + 1) * cw, (r + 1) * ch)))
                         for c in range(COLS)]
+    rows = apply_row_fixes(cd, rows, cw)
 
-    # 行条拼图(透明底贴深灰底便于目检)
+    # 行条拼图(透明底贴深灰底便于目检; 补行替换后帧高可不同, 统一缩到主行高)
     preview = Image.new("RGB", (COLS * cw, len(ROW_LAYOUT) * (ch + 4)), (24, 26, 30))
     for r, motion in enumerate(ROW_LAYOUT):
         for c in range(COLS):
-            preview.paste(rows[motion][c], (c * cw, r * (ch + 4)), rows[motion][c])
+            cell = rows[motion][c]
+            if cell.height != ch:
+                s = ch / cell.height
+                cell = cell.resize((max(1, round(cell.width * s)), ch), Image.LANCZOS)
+            preview.paste(cell, (c * cw, r * (ch + 4)), cell)
     tag = sheet_path.stem
     preview_path = sheet_path.parent / f"transparent_rows_{tag}.png"
     preview.save(preview_path, optimize=True)

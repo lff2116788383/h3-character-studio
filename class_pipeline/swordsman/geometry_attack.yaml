@@ -1,0 +1,18 @@
+# 剑客几何标注·攻击帧（attack1 劈砍中段专用, 修复后空间行带校准 2026-11-27）
+# 归一化空间同 geometry.yaml; attack1 f4 内容占 x7-228 y39-242
+# 姿态: 低伏弓步前压, 右手举剑向右下 45° 劈出, 剑尖至 (195,195) 贴前腿膝高
+# 校准依据: 行带 alpha 分析(帽顶 y38-50 檐最宽 y60-70 x80-160; 剑刃斜线右缘
+#   y170-190 x173→188; 后腿蹬直至 (18,230); 前腿弓步 (210,235))
+# 用法: python normals.py <attack1_f4帧> geometry_attack.yaml <out_dir>
+parts:
+  - {kind: tube, points: [[78,68],[72,95],[70,115]], radius: 9}                       # 马尾(低头垂左后)
+  - {kind: tube, points: [[90,100],[62,140],[40,178]], radius: 24}                    # 披风(背后垂布)
+  - {kind: tube, points: [[100,175],[60,205],[20,228]], radius: 12}                   # 后腿(蹬直)
+  - {kind: tube, points: [[105,120],[100,148]], radius: 8}                            # 后臂
+  - {kind: ellipsoid, spec: [120,135,24,38], slope: 0.55}                             # 躯干(前倾)
+  - {kind: tube, points: [[135,180],[172,205],[210,232]], radius: 12}                 # 前腿(弓步)
+  - {kind: tube, points: [[128,100],[168,107]], radius: 8}                            # 剑臂(举剑)
+  - {kind: ellipsoid, spec: [118,90,13,12], slope: 0.55}                              # 头/脸
+  - {kind: ellipsoid, spec: [120,60,40,18], slope: 0.45}                              # 斗笠(前倾)
+silver_polys:
+  - [[170,114],[198,192],[194,194],[166,116]]                                         # 剑刃(右下45°劈,宽5px刃带)
